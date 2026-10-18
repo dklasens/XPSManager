@@ -1,0 +1,11 @@
+[
+  {
+    "date": "2026-09-30",
+    "macrostructure": "Stat-Led (adapted: app window)",
+    "theme": "Cobalt",
+    "enrichment": "none (hand-built XPS mark)",
+    "nav": "none (app)",
+    "footer": "none (app)",
+    "brief": "XPS Manager · WPF utility to read and write Dell BIOS thermal + charging settings"
+  }
+]

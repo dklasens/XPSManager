@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/XpsManager.App/XpsManager.App.csproj" />
+    <Project Path="src/XpsManager.Cli/XpsManager.Cli.csproj" />
+    <Project Path="src/XpsManager.Core/XpsManager.Core.csproj" />
+  </Folder>
+</Solution>

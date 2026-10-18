@@ -1,0 +1,309 @@
+<!--
+  Hallmark · component styles for the Cobalt app window.
+  states: default · hover · focus (keyboard, instant) · pressed · disabled · loading · error · success
+  Loading / error / success live at the window level (Apply label + status line), not per control.
+  No transitions anywhere: every state change is instant.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <BooleanToVisibilityConverter x:Key="BoolToVisibility" />
+
+    <!-- Keyboard focus ring: 2px cobalt, 3px offset, shown only for keyboard focus, never animated. -->
+    <Style x:Key="FocusRing">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Border Margin="-4" BorderBrush="{StaticResource Accent}" BorderThickness="2"
+                            CornerRadius="10" SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Text roles -->
+    <Style x:Key="Heading" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontDisplay}" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="FontSize" Value="{StaticResource TextHeading}" />
+        <Setter Property="Foreground" Value="{StaticResource Ink}" />
+    </Style>
+
+    <Style x:Key="Description" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
+        <Setter Property="FontSize" Value="{StaticResource TextSmall}" />
+        <Setter Property="Foreground" Value="{StaticResource Muted}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="LineHeight" Value="20" />
+    </Style>
+
+    <Style x:Key="ReadoutLabel" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+        <Setter Property="FontSize" Value="{StaticResource TextLabel}" />
+        <Setter Property="Foreground" Value="{StaticResource GraphiteMuted}" />
+    </Style>
+
+    <!-- Section label on paper: the readout label's voice, in the paper's muted ink. -->
+    <Style x:Key="SectionLabel" TargetType="TextBlock" BasedOn="{StaticResource ReadoutLabel}">
+        <Setter Property="Foreground" Value="{StaticResource Muted}" />
+    </Style>
+
+    <!-- Strip label: turns amber when Tag is true (hardware is limiting that figure). -->
+    <Style x:Key="StripLabel" TargetType="TextBlock" BasedOn="{StaticResource ReadoutLabel}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Tag, RelativeSource={RelativeSource Self}}" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource GraphiteWarn}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Live figure in the readout band's strip. -->
+    <Style x:Key="StripValue" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource FontDisplay}" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="FontSize" Value="{StaticResource TextHeading}" />
+        <Setter Property="Foreground" Value="{StaticResource GraphiteInk}" />
+        <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+        <Setter Property="Margin" Value="0,4,0,0" />
+    </Style>
+
+    <!-- View tab: plain text, ink underline when selected. Arrow keys move between tabs. -->
+    <Style x:Key="ViewTab" TargetType="RadioButton">
+        <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
+        <Setter Property="FontSize" Value="{StaticResource TextBody}" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="Foreground" Value="{StaticResource Muted}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Margin" Value="0,0,24,0" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="Tab" Background="{StaticResource Clear}" BorderBrush="{StaticResource Clear}"
+                            BorderThickness="0,0,0,2" Padding="0,12,0,10">
+                        <ContentPresenter RecognizesAccessKey="False" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Foreground" Value="{StaticResource Ink2}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter Property="Foreground" Value="{StaticResource Ink}" />
+                            <Setter TargetName="Tab" Property="BorderBrush" Value="{StaticResource Ink}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Segment: a radio option drawn as a bordered key. Selected = ink fill. The cobalt
+         square marks the value the BIOS currently holds. -->
+    <Style x:Key="Segment" TargetType="RadioButton">
+        <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
+        <Setter Property="FontSize" Value="{StaticResource TextBody}" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="Foreground" Value="{StaticResource Ink2}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Margin" Value="0,0,8,0" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="Key" Height="{StaticResource ControlHeight}" Padding="8,0"
+                            Background="{StaticResource Clear}" BorderBrush="{StaticResource Rule2}"
+                            BorderThickness="1" CornerRadius="{StaticResource RadiusControl}">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Rectangle Width="6" Height="6" Margin="0,0,8,0" Fill="{StaticResource Accent}"
+                                       ToolTip="Active in BIOS" ToolTipService.InitialShowDelay="800"
+                                       Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}" />
+                            <ContentPresenter RecognizesAccessKey="False" />
+                        </StackPanel>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Key" Property="Background" Value="{StaticResource Paper2}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Key" Property="Background" Value="{StaticResource Paper3}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Key" Property="Background" Value="{StaticResource Ink}" />
+                            <Setter TargetName="Key" Property="BorderBrush" Value="{StaticResource Ink}" />
+                            <Setter Property="Foreground" Value="{StaticResource Paper}" />
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsChecked" Value="True" />
+                                <Condition Property="IsMouseOver" Value="True" />
+                            </MultiTrigger.Conditions>
+                            <Setter TargetName="Key" Property="Background" Value="{StaticResource Ink2}" />
+                            <Setter TargetName="Key" Property="BorderBrush" Value="{StaticResource Ink2}" />
+                        </MultiTrigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.55" />
+                            <Setter Property="Cursor" Value="No" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Buttons: one solid cobalt action, everything else quiet and bordered. -->
+    <Style x:Key="ButtonBase" TargetType="Button">
+        <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
+        <Setter Property="FontSize" Value="{StaticResource TextBody}" />
+        <Setter Property="FontWeight" Value="Medium" />
+        <Setter Property="Height" Value="{StaticResource ControlHeight}" />
+        <Setter Property="Padding" Value="16,0" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+    </Style>
+
+    <Style x:Key="QuietButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Setter Property="Foreground" Value="{StaticResource Ink2}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Face" Padding="{TemplateBinding Padding}" Background="{StaticResource Clear}"
+                            BorderBrush="{StaticResource Rule2}" BorderThickness="1"
+                            CornerRadius="{StaticResource RadiusControl}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Face" Property="Background" Value="{StaticResource Paper2}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Face" Property="Background" Value="{StaticResource Paper3}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                            <Setter Property="Cursor" Value="No" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Setter Property="Foreground" Value="{StaticResource AccentInk}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Face" Padding="{TemplateBinding Padding}" Background="{StaticResource Accent}"
+                            CornerRadius="{StaticResource RadiusControl}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Face" Property="Background" Value="{StaticResource AccentHover}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Face" Property="Background" Value="{StaticResource AccentPressed}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                            <Setter Property="Cursor" Value="No" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Slider: 2px track, ink fill to the thumb, a ruler-square thumb with a 24x32 hit area. -->
+    <Style x:Key="TrackFill" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="{StaticResource Clear}">
+                        <Border Height="2" VerticalAlignment="Center" Background="{TemplateBinding Background}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SliderThumb" TargetType="Thumb">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Grid Width="24" Height="32" Background="{StaticResource Clear}">
+                        <Border x:Name="Knob" Width="12" Height="24" CornerRadius="{StaticResource RadiusThumb}"
+                                Background="{StaticResource Paper}" BorderBrush="{StaticResource Ink}"
+                                BorderThickness="1.5" SnapsToDevicePixels="True" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Knob" Property="Background" Value="{StaticResource Paper2}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Knob" Property="Background" Value="{StaticResource Paper3}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="LimitSlider" TargetType="Slider">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="IsSnapToTickEnabled" Value="True" />
+        <Setter Property="IsMoveToPointEnabled" Value="True" />
+        <Setter Property="TickFrequency" Value="1" />
+        <Setter Property="SmallChange" Value="1" />
+        <Setter Property="LargeChange" Value="5" />
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid Height="32" Background="{StaticResource Clear}">
+                        <Border Height="2" Margin="12,0" VerticalAlignment="Center" Background="{StaticResource Neutral}" />
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="Slider.DecreaseLarge" Style="{StaticResource TrackFill}"
+                                              Background="{StaticResource Ink}" Margin="12,0,0,0" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="Slider.IncreaseLarge" Style="{StaticResource TrackFill}"
+                                              Background="{StaticResource Clear}" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource SliderThumb}" />
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.55" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Tooltips read like readout labels. -->
+    <Style TargetType="ToolTip">
+        <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
+        <Setter Property="FontSize" Value="{StaticResource TextLabel}" />
+        <Setter Property="Foreground" Value="{StaticResource GraphiteInk}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToolTip">
+                    <Border Background="{StaticResource Graphite}" CornerRadius="4" Padding="8,4">
+                        <ContentPresenter />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+</ResourceDictionary>

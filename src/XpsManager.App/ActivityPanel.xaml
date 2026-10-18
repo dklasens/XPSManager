@@ -1,0 +1,73 @@
+<!-- Hallmark: component scope; modern-minimal; Cobalt. Four aligned fact columns, no charts.
+     Pre-emit critique: P4 H5 E4 S5 R5 V4. Existing tokens plus Warn for hardware limits. -->
+<UserControl x:Class="XpsManager.App.ActivityPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:local="clr-namespace:XpsManager.App"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=local:TelemetryViewModel}">
+    <StackPanel>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="32" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock Text="POWER" Style="{StaticResource SectionLabel}" Margin="0,0,0,10" />
+                <local:Fact Label="{Binding BatteryDrawLabel}" Value="{Binding BatteryValue}"
+                            Detail="What the battery is supplying right now. Excludes power the charger supplies directly." />
+                <local:Fact Label="CPU package" Value="{Binding Package}"
+                            Detail="The whole processor chip: cores, graphics, NPU and the rest of the SoC." />
+                <local:Fact Label="Cores" Value="{Binding Cores}" Indent="True" Detail="CPU cores only." />
+                <local:Fact Label="Graphics" Value="{Binding Graphics}" Indent="True" Detail="Integrated Arc graphics only." />
+                <local:Fact Label="Memory" Value="{Binding Memory}" Detail="System memory (RAM)." />
+                <local:Fact Label="Everything else" Value="{Binding Everything}"
+                            Detail="Battery draw minus package and memory: display, storage, Wi-Fi, fans and conversion losses. Only while on battery." />
+            </StackPanel>
+
+            <StackPanel Grid.Column="2">
+                <TextBlock Text="BATTERY" Style="{StaticResource SectionLabel}" Margin="0,0,0,10" />
+                <local:Fact Label="Time left" Value="{Binding TimeLeftText}" Detail="{Binding TimeLeftDetail}" />
+                <local:Fact Label="Used since opened" Value="{Binding UsedSinceOpened}"
+                            Detail="Energy drawn from the battery while this window has been open." />
+                <local:Fact Label="Remaining / full" Value="{Binding Capacity}" />
+                <local:Fact Label="Health (est.)" Value="{Binding Health}" Detail="{Binding HealthDetail}" />
+                <local:Fact Label="Charge cycles" Value="{Binding Cycles}" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Margin="0,16,0,0">
+                <TextBlock Text="PROCESSOR" Style="{StaticResource SectionLabel}" Margin="0,0,0,10" />
+                <local:Fact Label="{Binding PCoresLabel}" Value="{Binding PCoreClock}"
+                            Detail="Average effective clock across the performance cores." />
+                <local:Fact Label="{Binding ECoresLabel}" Value="{Binding ECoreClock}"
+                            Detail="Average effective clock across the efficient and low-power cores. Windows reports them as one group." />
+                <local:Fact Label="Load" Value="{Binding Load}" Detail="Processor utility, as Task Manager shows it." />
+                <local:Fact Label="Limit" Value="{Binding CpuLimit}" Warn="{Binding CpuLimited}"
+                            Detail="Whether firmware is holding the CPU below its normal maximum: power, thermal or platform limits." />
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,16,0,0">
+                <TextBlock Text="GRAPHICS" Style="{StaticResource SectionLabel}" Margin="0,0,0,10" />
+                <local:Fact Label="Clock" Value="{Binding GpuClock}" Detail="{Binding GpuClockDetail}" />
+                <local:Fact Label="Busy" Value="{Binding GpuBusy}" Detail="Busiest GPU engine, as Task Manager measures it." />
+                <local:Fact Label="Media engine" Value="{Binding MediaClock}"
+                            Detail="Clock of the separate media engine that decodes and encodes video." />
+                <local:Fact Label="Limit" Value="{Binding GpuLimit}" Warn="{Binding GpuLimited}"
+                            Detail="Why the GPU is below the clock it asked for, as reported by the Intel driver." />
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Text="{Binding Note}" Style="{StaticResource Description}" Margin="0,12,0,0"
+                   Visibility="{Binding HasNote, Converter={StaticResource BoolToVisibility}}" />
+        <TextBlock Style="{StaticResource Description}" Margin="0,12,0,0"
+                   Text="Temperatures and fan speed aren't reported to Windows on this laptop. Limits above show when heat or power is holding performance back." />
+    </StackPanel>
+</UserControl>

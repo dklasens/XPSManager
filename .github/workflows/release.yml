@@ -1,0 +1,66 @@
+name: Release
+
+# Push a tag like v1.1 to build, check and publish a GitHub release with
+# XpsManager.exe and a .zip. Can also be run by hand for an existing tag.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to release (e.g. v1.1)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Work out version
+        shell: pwsh
+        run: |
+          $v = $env:TAG.TrimStart('v')
+          if ($v -notmatch '^\d+\.\d+(\.\d+)?$') { throw "Tag '$env:TAG' isn't a version like v1.1" }
+          if ($v -match '^\d+\.\d+$') { $v = "$v.0" }
+          "VERSION=$v" >> $env:GITHUB_ENV
+
+      - name: Run checks
+        run: dotnet run --project tools/TelemetryChecks -c Release
+
+      - name: Publish single exe
+        run: dotnet publish src/XpsManager.App -p:PublishProfile=SingleFile -p:Version=${{ env.VERSION }}
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $zip = "XpsManager-$env:TAG-win-x64.zip"
+          Compress-Archive -Path dist/XpsManager.exe, README.md -DestinationPath $zip
+          "ZIP=$zip" >> $env:GITHUB_ENV
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          XPS Manager $env:TAG for Windows 11 (x64).
+
+          - **XpsManager.exe**: download and run. Windows asks for administrator access, which is needed to change BIOS settings.
+          - **$env:ZIP**: the same app with the README.
+
+          Requires the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). Built for the Dell XPS 14 (DA14260).
+          The exe isn't code-signed, so Windows SmartScreen may warn the first time: choose **More info › Run anyway**.
+          "@
+          gh release create $env:TAG dist/XpsManager.exe $env:ZIP --title "XPS Manager $env:TAG" --notes $notes

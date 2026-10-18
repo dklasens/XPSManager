@@ -1,0 +1,8 @@
+<Project>
+  <!-- One version for every project. Release builds override it from the git tag (v1.1 -> 1.1.0). -->
+  <PropertyGroup>
+    <Version>1.1.0</Version>
+    <Authors>David Klasens</Authors>
+    <Product>XPS Manager</Product>
+  </PropertyGroup>
+</Project>

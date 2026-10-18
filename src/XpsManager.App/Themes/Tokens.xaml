@@ -1,0 +1,105 @@
+<!--
+  Hallmark · genre: modern-minimal · macrostructure: Stat-Led (adapted: app window) · theme: Cobalt
+  enrichment: none (typography + XPS mark) · nav: none (app) · footer: none (app) · motion: none
+  tone: technical / austere · anchor hue: 256 (cobalt) · audience: owner of this XPS · use: glance, adjust, write
+  pre-emit critique: P4 H5 E5 S5 R5 V4 · slop test: 58/58 (web-only gates 34, 50-53, 56 n/a) · contrast: pass (40-41)
+  spacing: 4pt scale · mono = one role (machine readout: labels, values, pending, kbd hints), per Cobalt
+
+  WPF has no OKLCH, so each token is authored in OKLCH (comment) and stored as its sRGB hex.
+  Contrast (WCAG): Ink/Paper 15.8 · Ink2/Paper 11.3 · Muted/Paper 5.7 · AccentInk/Accent 4.9
+                   GraphiteInk/Graphite 15.0 · GraphiteMuted/Graphite 7.0 · GraphiteAccent/Graphite 6.9
+  Neutral (4.1) is for non-text marks only (slider track, hairlines).
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!-- Paper and ink -->
+    <Color x:Key="PaperColor">#F8FAFD</Color>          <!-- oklch(98.5% 0.004 250) -->
+    <Color x:Key="Paper2Color">#EFF2F6</Color>         <!-- oklch(96% 0.006 252)   hover -->
+    <Color x:Key="Paper3Color">#E4E8ED</Color>         <!-- oklch(93% 0.008 254)   pressed -->
+    <Color x:Key="RuleColor">#DADEE3</Color>           <!-- oklch(90% 0.008 255)   hairlines -->
+    <Color x:Key="Rule2Color">#B9BEC6</Color>          <!-- oklch(80% 0.012 256)   control borders -->
+    <Color x:Key="NeutralColor">#757B83</Color>        <!-- oklch(58% 0.014 257)   non-text marks -->
+    <Color x:Key="MutedColor">#5E646D</Color>          <!-- oklch(50% 0.016 257)   secondary text -->
+    <Color x:Key="Ink2Color">#323841</Color>           <!-- oklch(34% 0.018 257)   body text -->
+    <Color x:Key="InkColor">#192029</Color>            <!-- oklch(24% 0.020 258)   headings, selected -->
+
+    <!-- The one signal -->
+    <Color x:Key="AccentColor">#0069DF</Color>         <!-- oklch(54% 0.20 256) -->
+    <Color x:Key="AccentHoverColor">#005AC8</Color>    <!-- oklch(49% 0.19 256) -->
+    <Color x:Key="AccentPressedColor">#004FB5</Color>  <!-- oklch(45% 0.18 256) -->
+    <Color x:Key="AccentInkColor">#F8FAFD</Color>      <!-- oklch(98.5% 0.004 250) -->
+
+    <!-- The one dark beat: the readout band -->
+    <Color x:Key="GraphiteColor">#161B22</Color>       <!-- oklch(22% 0.016 260) -->
+    <Color x:Key="GraphiteRuleColor">#2E333B</Color>   <!-- oklch(32% 0.016 260) -->
+    <Color x:Key="GraphiteInkColor">#EBEFF4</Color>    <!-- oklch(95% 0.008 250) -->
+    <Color x:Key="GraphiteMutedColor">#9FA5AD</Color>  <!-- oklch(72% 0.014 255) -->
+    <Color x:Key="GraphiteAccentColor">#61A6FF</Color> <!-- oklch(72% 0.15 256) -->
+
+    <Color x:Key="ErrorColor">#BE222A</Color>          <!-- oklch(52% 0.19 25) -->
+
+    <!-- Limits: hardware is holding performance back. Not an error, so amber, never red. -->
+    <Color x:Key="WarnColor">#985A00</Color>           <!-- oklch(51% 0.12 65)  on Paper 5.3 -->
+    <Color x:Key="GraphiteWarnColor">#EDB054</Color>   <!-- oklch(80% 0.13 75)  on Graphite 9.6 -->
+
+    <SolidColorBrush x:Key="Paper" Color="{StaticResource PaperColor}" />
+    <SolidColorBrush x:Key="Paper2" Color="{StaticResource Paper2Color}" />
+    <SolidColorBrush x:Key="Paper3" Color="{StaticResource Paper3Color}" />
+    <SolidColorBrush x:Key="Rule" Color="{StaticResource RuleColor}" />
+    <SolidColorBrush x:Key="Rule2" Color="{StaticResource Rule2Color}" />
+    <SolidColorBrush x:Key="Neutral" Color="{StaticResource NeutralColor}" />
+    <SolidColorBrush x:Key="Muted" Color="{StaticResource MutedColor}" />
+    <SolidColorBrush x:Key="Ink2" Color="{StaticResource Ink2Color}" />
+    <SolidColorBrush x:Key="Ink" Color="{StaticResource InkColor}" />
+    <SolidColorBrush x:Key="Accent" Color="{StaticResource AccentColor}" />
+    <SolidColorBrush x:Key="AccentHover" Color="{StaticResource AccentHoverColor}" />
+    <SolidColorBrush x:Key="AccentPressed" Color="{StaticResource AccentPressedColor}" />
+    <SolidColorBrush x:Key="AccentInk" Color="{StaticResource AccentInkColor}" />
+    <SolidColorBrush x:Key="Graphite" Color="{StaticResource GraphiteColor}" />
+    <SolidColorBrush x:Key="GraphiteRule" Color="{StaticResource GraphiteRuleColor}" />
+    <SolidColorBrush x:Key="GraphiteInk" Color="{StaticResource GraphiteInkColor}" />
+    <SolidColorBrush x:Key="GraphiteMuted" Color="{StaticResource GraphiteMutedColor}" />
+    <SolidColorBrush x:Key="GraphiteAccent" Color="{StaticResource GraphiteAccentColor}" />
+    <SolidColorBrush x:Key="Error" Color="{StaticResource ErrorColor}" />
+    <SolidColorBrush x:Key="Warn" Color="{StaticResource WarnColor}" />
+    <SolidColorBrush x:Key="GraphiteWarn" Color="{StaticResource GraphiteWarnColor}" />
+    <SolidColorBrush x:Key="Clear" Color="Transparent" />
+
+    <!-- Type: display + body + mono (2+1). Embedded; OFL licences sit beside the files. -->
+    <FontFamily x:Key="FontDisplay">pack://application:,,,/XpsManager;component/Assets/Fonts/#Space Grotesk</FontFamily>
+    <FontFamily x:Key="FontBody">pack://application:,,,/XpsManager;component/Assets/Fonts/#Inter</FontFamily>
+    <FontFamily x:Key="FontMono">pack://application:,,,/XpsManager;component/Assets/Fonts/#JetBrains Mono</FontFamily>
+
+    <!-- Size scale: five sizes only -->
+    <sys:Double x:Key="TextLabel">11</sys:Double>     <!-- mono uppercase labels -->
+    <sys:Double x:Key="TextSmall">13</sys:Double>     <!-- descriptions, status -->
+    <sys:Double x:Key="TextBody">14</sys:Double>      <!-- controls -->
+    <sys:Double x:Key="TextHeading">19</sys:Double>   <!-- section heads -->
+    <sys:Double x:Key="TextStat">60</sys:Double>      <!-- the readout figure -->
+    <sys:Double x:Key="TextPower">40</sys:Double>     <!-- live battery watts -->
+
+    <!-- Geometry: tight, ruler-drawn -->
+    <CornerRadius x:Key="RadiusControl">6</CornerRadius>
+    <CornerRadius x:Key="RadiusThumb">3</CornerRadius>
+    <sys:Double x:Key="ControlHeight">40</sys:Double>
+
+    <!-- The XPS mark (keep in sync with tools/make-icon.ps1) -->
+    <DrawingImage x:Key="XpsMark">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="{StaticResource Graphite}" Geometry="M52,8 H204 A44,44 0 0 1 248,52 V204 A44,44 0 0 1 204,248 H52 A44,44 0 0 1 8,204 V52 A44,44 0 0 1 52,8 Z" />
+                <GeometryDrawing Geometry="M204,52 L52,204">
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource GraphiteAccent}" Thickness="38" /></GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="M52,52 L204,204">
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource Graphite}" Thickness="62" /></GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="M52,52 L204,204">
+                    <GeometryDrawing.Pen><Pen Brush="{StaticResource GraphiteInk}" Thickness="38" /></GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+</ResourceDictionary>
