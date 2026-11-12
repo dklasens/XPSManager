@@ -1,11 +1,13 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
+using System.Management;
+using System.Text;
 
 namespace XpsManager.Core;
 
 public sealed record BatterySnapshot(string State, double? Watts, double? Volts,
-    double? RemainingWh, double? FullWh, uint? Cycles, string? Note = null, double? DesignWh = null)
+    double? RemainingWh, double? FullWh, uint? Cycles, string? Note = null, double? DesignWh = null, string? Serial = null, string? Ppid = null)
 {
     // Capacity estimate, not state of charge. New batteries can report above design capacity.
     public double? HealthPercent => FullWh is > 0 && DesignWh is > 0 ? FullWh / DesignWh * 100 : null;
@@ -58,7 +60,8 @@ public static class BatteryTelemetry
                         var status = Query(handle, QueryStatus, wait, 16);
                         return Decode(capabilities, BitConverter.ToUInt32(status), BitConverter.ToInt32(status, 12),
                             BitConverter.ToUInt32(status, 8), BitConverter.ToUInt32(status, 4),
-                            BitConverter.ToUInt32(info, 16), BitConverter.ToUInt32(info, 32), BitConverter.ToUInt32(info, 12));
+                            BitConverter.ToUInt32(info, 16), BitConverter.ToUInt32(info, 32), BitConverter.ToUInt32(info, 12))
+                            with { Serial = ReadSerial(handle, request), Ppid = BatteryIdentity.Ppid };
                     }
                     finally { Marshal.FreeHGlobal(detail); }
                 }
@@ -94,6 +97,39 @@ public static class BatteryTelemetry
         if (read < length) throw new Win32Exception(13);
         return output;
     }
+
+    static string? ReadSerial(SafeFileHandle handle, byte[] request)
+    {
+        // BatterySerialNumber = 8. Unlike the fixed-size telemetry queries this returns a variable-length UTF-16 string.
+        BitConverter.GetBytes(8).CopyTo(request, 4);
+        var buffer = new byte[1024];
+        if (DeviceIoControl(handle, QueryInformation, request, request.Length, buffer, buffer.Length, out var read, IntPtr.Zero) && read >= 2)
+        {
+            var serial = Encoding.Unicode.GetString(buffer, 0, Math.Min(read, buffer.Length) & ~1).TrimEnd('\0').Trim();
+            if (serial.Length > 0) return serial;
+        }
+        return FallbackSerial.Value;
+    }
+
+    static readonly Lazy<string?> FallbackSerial = new(() =>
+    {
+        try
+        {
+            using var query = new ManagementObjectSearcher("SELECT DeviceID FROM Win32_Battery");
+            using var results = query.Get();
+            foreach (ManagementObject battery in results)
+            {
+                using (battery)
+                {
+                    var id = battery["DeviceID"] as string;
+                    var prefix = new string((id ?? "").TakeWhile(char.IsAsciiDigit).ToArray());
+                    if (ushort.TryParse(prefix, out var serial)) return serial.ToString("X4");
+                }
+            }
+        }
+        catch (Exception e) when (e is ManagementException or COMException or UnauthorizedAccessException) { }
+        return null;
+    });
 
     [StructLayout(LayoutKind.Sequential)]
     struct InterfaceData { public int Size; public Guid ClassGuid; public uint Flags; public IntPtr Reserved; }

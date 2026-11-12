@@ -60,6 +60,7 @@ public sealed class MainViewModel : Observable
 
     /// <summary>Live readings for the readout band and the Activity view.</summary>
     public TelemetryViewModel Live { get; } = new();
+    public AutomaticViewModel Automatic { get; } = new();
 
     public ObservableCollection<OptionViewModel> ThermalOptions { get; } = [];
     public ObservableCollection<OptionViewModel> ChargeOptions { get; } = [];
@@ -157,7 +158,19 @@ public sealed class MainViewModel : Observable
         OnPropertyChanged(nameof(ApplyLabel));
         try
         {
-            await RunAsync("Writing to BIOS…", () => settings.Apply(state, change), "Verified at");
+            await RunAsync("Writing to BIOS…", () =>
+            {
+                var current = settings.Read();
+                // Automatic switching may have updated the BIOS while the user edited charging.
+                var desired = change with
+                {
+                    ThermalMode = change.ThermalMode == state.ThermalMode ? current.ThermalMode : change.ThermalMode,
+                    ChargeMode = change.ChargeMode == state.ChargeMode ? current.ChargeMode : change.ChargeMode,
+                    ChargeStart = change.ChargeStart == state.ChargeStart ? current.ChargeStart : change.ChargeStart,
+                    ChargeStop = change.ChargeStop == state.ChargeStop ? current.ChargeStop : change.ChargeStop
+                };
+                return settings.Apply(current, desired);
+            }, "Verified at");
         }
         finally
         {
@@ -167,6 +180,21 @@ public sealed class MainViewModel : Observable
     }
 
     public void Revert() { if (_state is not null) Populate(_state); }
+
+    public async Task RefreshOnActivationAsync()
+    {
+        if (_settings is null || IsBusy) return;
+        var pending = HasChanges ? Pending() : null;
+        var previous = _state;
+        await LoadAsync();
+        if (pending is null || previous is null) return;
+        if (pending.ThermalMode != previous.ThermalMode)
+            foreach (var option in ThermalOptions) option.IsSelected = option.Value == pending.ThermalMode;
+        if (pending.ChargeMode != previous.ChargeMode)
+            foreach (var option in ChargeOptions) option.IsSelected = option.Value == pending.ChargeMode;
+        if (pending.ChargeStart != previous.ChargeStart) ChargeStart = pending.ChargeStart;
+        if (pending.ChargeStop != previous.ChargeStop) ChargeStop = pending.ChargeStop;
+    }
 
     async Task RunAsync(string busyText, Func<PowerState> work, string doneText)
     {
@@ -194,6 +222,7 @@ public sealed class MainViewModel : Observable
     void Populate(PowerState state)
     {
         _state = state;
+        Automatic.SetOptions(state.ThermalModes);
 
         ThermalOptions.Clear();
         foreach (var o in state.ThermalModes)

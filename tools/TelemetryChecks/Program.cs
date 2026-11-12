@@ -8,7 +8,18 @@ using XpsManager.App;
 internal static class Program
 {
     [STAThread]
-    static void Main(string[] args)
+    static int Main(string[] args)
+    {
+        try { Run(args); return 0; }
+        catch (Exception e)
+        {
+            // Test failures must produce a nonzero CI/console result, never a Windows crash dialog.
+            Console.Error.WriteLine(e);
+            return 1;
+        }
+    }
+
+    static void Run(string[] args)
     {
         var discharge = BatteryTelemetry.Decode(0x80000000, 2, -10106, 12923, 63873, 68607, 23);
         Check(discharge.State == "Discharging" && discharge.Watts == -10.106 && discharge.Volts == 12.923
@@ -31,6 +42,10 @@ internal static class Program
         Console.WriteLine("PASS: battery estimator checks");
         GpuChecks();
         Console.WriteLine("PASS: GPU decoding checks");
+        AutoSwitchChecks();
+        Console.WriteLine("PASS: automatic thermal policy and debounce checks");
+        BatteryIdentityChecks();
+        Console.WriteLine("PASS: battery firmware identity checks");
 
         if (args.Contains("--live"))
         {
@@ -45,6 +60,52 @@ internal static class Program
             if (IntelGraphics.OpenError is { } error) Console.WriteLine($"Intel graphics library: {error}");
         }
         if (args.Contains("--render")) Render();
+        if (args is ["--service-checks", var exe]) ServiceChecks.Run(exe);
+    }
+
+    static void AutoSwitchChecks()
+    {
+        string[] possible = ["Quiet", "Cool", "Optimized", "UltraPerformance"];
+        var config = AutoSwitchConfiguration.Default with { Enabled = true };
+        foreach (var (mode, expected) in config.Mapping)
+            Check(AutoSwitchPolicy.Evaluate(mode, config, possible).Target == expected, $"default {mode}");
+        Check(AutoSwitchPolicy.Evaluate(WindowsPowerMode.BestPerformance, config with { Enabled = false }, possible).Target is null, "disabled never writes");
+        Check(AutoSwitchPolicy.Evaluate(WindowsPowerMode.Custom, config, possible).Target is null, "unknown overlay never writes");
+        var missing = AutoSwitchPolicy.Evaluate(WindowsPowerMode.BestPerformance, config, ["Quiet"]);
+        Check(missing.Target is null && missing.Error is not null, "BIOS rejects unsupported mapping");
+        Check(AutoSwitchPolicy.Evaluate(WindowsPowerMode.BestPerformance, config, ["Performance"]).Target == "Performance", "legacy BIOS performance spelling");
+        var mapping = config.Mapping.ToDictionary(p => p.Key, p => p.Value);
+        mapping[WindowsPowerMode.Balanced] = "";
+        Check(AutoSwitchPolicy.Evaluate(WindowsPowerMode.Balanced, config with { Mapping = mapping }, possible).Target is null, "explicit no change");
+        mapping[WindowsPowerMode.Balanced] = "performance";
+        Check(AutoSwitchPolicy.Evaluate(WindowsPowerMode.Balanced, config with { Mapping = mapping }, possible).Error is not null, "exact BIOS value required");
+        mapping[WindowsPowerMode.Custom] = "Performance";
+        Check(AutoSwitchPolicy.Evaluate(WindowsPowerMode.Custom, config with { Mapping = mapping }, possible).Target is null, "custom mapping cannot override unknown-mode safety");
+
+        var debounce = new SwitchDebounce();
+        Check(debounce.Take(5000) is null, "no timer-driven policy without an event");
+        debounce.Signal(100, "unplugged", true);
+        Check(debounce.Take(2099) is null, "wait full debounce interval");
+        debounce.Signal(2000, "plugged in");
+        Check(debounce.Take(2100) is null && debounce.Take(3999) is null, "new event extends deadline");
+        Check(debounce.Take(4000) is { Trigger: "plugged in", Force: true }, "coalesces to final event and preserves forced reload");
+        Check(debounce.Take(6000) is null, "single application per burst");
+        debounce.Signal(7000, "power mode changed");
+        Check(debounce.Take(9000) is { Force: false }, "force reset after taking event");
+    }
+
+    static void BatteryIdentityChecks()
+    {
+        const string ppid = "CN0ABC12ABCDE1234567A00"; // synthetic identifier, never real machine data
+        byte[] Record(byte type, params string[] strings) => new byte[] { type, 4, 0, 0 }
+            .Concat(System.Text.Encoding.ASCII.GetBytes(string.Join('\0', strings) + "\0\0")).ToArray();
+        var battery = Record(22, "DELL ABC123", ppid);
+        Check(BatteryIdentity.FindPpid(battery) == ppid, "Dell type 22 PPID");
+        Check(BatteryIdentity.FindPpid(Record(1, "DELL ABC123", ppid)) is null, "ignore identifiers outside battery record");
+        Check(BatteryIdentity.FindPpid(Record(22, "OTHER ABC123", ppid)) is null, "do not infer Dell identity on other batteries");
+        Check(BatteryIdentity.FindPpid(battery.Concat(battery).ToArray()) is null, "multiple batteries are ambiguous");
+        Check(BatteryIdentity.FindPpid(battery[..^1]) is null, "truncated string table");
+        Check(BatteryIdentity.FindPpid([22, 0, 0, 0]) is null, "invalid structure length");
     }
 
     static void EstimatorChecks()
@@ -109,7 +170,8 @@ internal static class Program
             app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri($"pack://application:,,,/XpsManager;component/Themes/{name}.xaml") });
         var sample = new TelemetrySample(
             DateTime.UtcNow,
-            BatteryTelemetry.Decode(0x80000000, 2, -10106, 12923, 60403, 68607, 23, 70000),
+            BatteryTelemetry.Decode(0x80000000, 2, -10106, 12923, 60403, 68607, 23, 70000)
+                with { Serial = "00E1", Ppid = "CN0ABC12ABCDE1234567A00" },
             new PowerStatus(false, 88, TimeSpan.FromMinutes(272)),
             "Best power efficiency",
             new DisplayState(120, true, 60, 60),
@@ -129,6 +191,69 @@ internal static class Program
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
         encoder.Save(file);
         Console.WriteLine("Rendered artifacts/activity-panel.png (fixture data)");
+        RenderAutomatic(app);
+        RenderSettings(app, sample);
+    }
+
+    static void RenderSettings(Application app, TelemetrySample sample)
+    {
+        var automatic = new AutomaticViewModel();
+        automatic.SetOptions([new("Quiet", "Quiet", ""), new("Cool", "Cool", ""), new("Optimized", "Optimized", ""), new("UltraPerformance", "Ultra Performance", "")]);
+        automatic.Rows.Add(new("Best power efficiency", "Also used for Energy saver", WindowsPowerMode.BestPowerEfficiency, "Quiet"));
+        automatic.Rows.Add(new("Balanced", "Also used for Better performance", WindowsPowerMode.Balanced, "Optimized"));
+        automatic.Rows.Add(new("Best performance", "Maximum performance in Windows", WindowsPowerMode.BestPerformance, "UltraPerformance"));
+        OptionViewModel Option(string value, string label, string? shortLabel = null) => new(new(value, label, "", shortLabel), value == "Quiet", _ => { });
+        var window = new MainWindow { DataContext = new
+        {
+            Device = new DeviceInfo("XPS 14 DA14260", "fixture"), Live = new TelemetryViewModel(sample),
+            ActiveThermal = "Quiet", ActiveCharge = "Custom 50–80%", PendingThermal = "", PendingCharge = "",
+            HasPendingThermal = false, HasPendingCharge = false, Status = "Preview · fixture data", StatusIsError = false,
+            CanRefresh = true, IsLoaded = true, CanApply = false, ApplyLabel = "Write to BIOS", IsCustomCharge = false,
+            SelectedThermalDescription = "Keeps fan noise down at the cost of performance.",
+            SelectedChargeDescription = "You choose when charging starts and stops.", Automatic = automatic,
+            ThermalOptions = new[] { Option("Optimized", "Optimized"), Option("Cool", "Cool"), Option("Quiet", "Quiet"), Option("UltraPerformance", "Ultra Performance", "Ultra") },
+            ChargeOptions = new[] { Option("Adaptive", "Adaptive"), Option("Standard", "Standard"), Option("Express", "Express"), Option("PrimAcUse", "Primarily AC", "Mostly AC"), Option("Custom", "Custom") }
+        }};
+        // Render the actual content without showing the window or invoking its live Loaded handler.
+        var content = (FrameworkElement)window.Content;
+        ((System.Windows.Controls.DockPanel)content).Background = (Brush)app.FindResource("Paper");
+        content.Width = 600;
+        content.Height = 820;
+        content.Measure(new Size(600, 820));
+        content.Arrange(new Rect(0, 0, 600, 820));
+        app.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        content.UpdateLayout();
+        var bitmap = new RenderTargetBitmap(600, 820, 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(content);
+        using var output = File.Create("artifacts/settings-v2.png");
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        encoder.Save(output);
+        Console.WriteLine("Rendered artifacts/settings-v2.png (fixture data)");
+    }
+
+    static void RenderAutomatic(Application app)
+    {
+        var model = new AutomaticViewModel();
+        model.SetOptions([new("Quiet", "Quiet", ""), new("Optimized", "Optimized", ""), new("Performance", "Ultra Performance", "")]);
+        model.Rows.Add(new("Best power efficiency", "Also used for Energy saver", WindowsPowerMode.BestPowerEfficiency, "Quiet"));
+        model.Rows.Add(new("Balanced", "Also used for Better performance", WindowsPowerMode.Balanced, "Optimized"));
+        model.Rows.Add(new("Best performance", "Maximum performance in Windows", WindowsPowerMode.BestPerformance, "Performance"));
+        var panel = new AutomaticPanel { Width = 528, DataContext = model };
+        var border = new System.Windows.Controls.Border { Background = (Brush)app.FindResource("Paper"), Padding = new Thickness(28), Child = panel };
+        border.Measure(new Size(584, 1000));
+        border.Arrange(new Rect(border.DesiredSize));
+        app.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        border.Measure(new Size(584, 1000));
+        border.Arrange(new Rect(border.DesiredSize));
+        border.UpdateLayout();
+        var bitmap = new RenderTargetBitmap(584, (int)Math.Ceiling(border.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(border);
+        using var output = File.Create("artifacts/automatic-panel.png");
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        encoder.Save(output);
+        Console.WriteLine("Rendered artifacts/automatic-panel.png (fixture data)");
     }
 
     static void Check(bool passed, string name) { if (!passed) throw new Exception($"Failed: {name}"); }

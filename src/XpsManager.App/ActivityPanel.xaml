@@ -41,6 +41,7 @@
                 <local:Fact Label="Remaining / full" Value="{Binding Capacity}" />
                 <local:Fact Label="Health (est.)" Value="{Binding Health}" Detail="{Binding HealthDetail}" />
                 <local:Fact Label="Charge cycles" Value="{Binding Cycles}" />
+                <local:Fact Label="Serial" Value="{Binding BatterySerial}" Detail="Battery-reported serial number; DeviceID fallback when unavailable." />
             </StackPanel>
 
             <StackPanel Grid.Row="1" Margin="0,16,0,0">
@@ -64,6 +65,9 @@
                             Detail="Why the GPU is below the clock it asked for, as reported by the Intel driver." />
             </StackPanel>
         </Grid>
+
+        <local:Fact Label="Battery PPID" Value="{Binding BatteryPpid}" Margin="0,16,0,0"
+                    Detail="Dell component identifier from the firmware battery record. Unavailable when the source is missing or ambiguous." />
 
         <TextBlock Text="{Binding Note}" Style="{StaticResource Description}" Margin="0,12,0,0"
                    Visibility="{Binding HasNote, Converter={StaticResource BoolToVisibility}}" />

@@ -306,4 +306,88 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <!-- Automatic settings: reuse the Cobalt tokens, with instant keyboard focus and no motion. -->
+    <Style x:Key="AutoToggle" TargetType="CheckBox">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid Background="{StaticResource Clear}">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="44" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                        <Border x:Name="Track" Width="36" Height="20" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                Background="{StaticResource Paper3}" BorderBrush="{StaticResource Rule2}" BorderThickness="1" CornerRadius="10">
+                            <Ellipse x:Name="Thumb" Width="12" Height="12" Fill="{StaticResource Muted}" HorizontalAlignment="Left" Margin="3,0" />
+                        </Border>
+                        <ContentPresenter Grid.Column="1" VerticalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{StaticResource Accent}" />
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource Accent}" />
+                            <Setter TargetName="Thumb" Property="Fill" Value="{StaticResource AccentInk}" />
+                            <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource Ink}" /></Trigger>
+                        <Trigger Property="IsPressed" Value="True"><Setter TargetName="Track" Property="Opacity" Value="0.75" /></Trigger>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5" /></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MappingSelector" TargetType="ComboBox">
+        <Setter Property="FocusVisualStyle" Value="{StaticResource FocusRing}" />
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="FontFamily" Value="{StaticResource FontBody}" />
+        <Setter Property="FontSize" Value="{StaticResource TextSmall}" />
+        <Setter Property="Foreground" Value="{StaticResource Ink}" />
+        <Setter Property="ItemContainerStyle">
+            <Setter.Value>
+                <Style TargetType="ComboBoxItem">
+                    <Setter Property="Padding" Value="12,10" />
+                    <Setter Property="Background" Value="{StaticResource Paper}" />
+                    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem">
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter /></Border>
+                    </ControlTemplate></Setter.Value></Setter>
+                    <Style.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True"><Setter Property="Background" Value="{StaticResource Paper3}" /></Trigger>
+                        <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{StaticResource Accent}" /></Trigger>
+                    </Style.Triggers>
+                </Style>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton Focusable="False" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="Face" Background="{StaticResource Paper}" BorderBrush="{StaticResource Rule2}" BorderThickness="1" CornerRadius="{StaticResource RadiusControl}">
+                                    <Path Data="M0,0 L4,4 L8,0" Stroke="{StaticResource Muted}" StrokeThickness="1.5" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="{StaticResource Paper2}" /></Trigger>
+                                    <Trigger Property="IsPressed" Value="True"><Setter TargetName="Face" Property="Background" Value="{StaticResource Paper3}" /></Trigger>
+                                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="{StaticResource Accent}" /></Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate></ToggleButton.Template>
+                        </ToggleButton>
+                        <TextBlock Text="{Binding SelectedItem.Label, RelativeSource={RelativeSource TemplatedParent}}"
+                                   Margin="12,4,32,4" VerticalAlignment="Center" IsHitTestVisible="False" />
+                        <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False">
+                            <Border Background="{StaticResource Paper}" BorderBrush="{StaticResource Rule2}" BorderThickness="1" CornerRadius="{StaticResource RadiusControl}"
+                                    MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}" Margin="0,4,0,0">
+                                <ScrollViewer MaxHeight="280"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" /></ScrollViewer>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5" /></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 </ResourceDictionary>

@@ -3,12 +3,14 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace XpsManager.App;
 
 public partial class MainWindow : Window
 {
     readonly MainViewModel _vm = new();
+    readonly DispatcherTimer _serviceStatusTimer = new() { Interval = TimeSpan.FromSeconds(3) };
 
     public MainWindow()
     {
@@ -17,12 +19,32 @@ public partial class MainWindow : Window
         Activity.DataContext = _vm.Live;
         MaxHeight = SystemParameters.WorkArea.Height;
         SourceInitialized += (_, _) => PaintTitleBar();
-        Loaded += async (_, _) => await Task.WhenAll(_vm.LoadAsync(), _vm.Live.StartAsync());
-        Closed += (_, _) => _vm.Live.Dispose();
+        Loaded += async (_, _) =>
+        {
+            await Task.WhenAll(_vm.LoadAsync(), _vm.Live.StartAsync());
+            await _vm.Automatic.LoadAsync();
+            if (WindowState != WindowState.Minimized) _serviceStatusTimer.Start();
+        };
+        _serviceStatusTimer.Tick += (_, _) => _vm.Automatic.RefreshStatus();
+        Activated += async (_, _) =>
+        {
+            if (!_vm.IsLoaded || _vm.IsBusy) return;
+            await _vm.RefreshOnActivationAsync();
+            _vm.Automatic.RefreshStatus();
+        };
+        Closed += (_, _) => { _serviceStatusTimer.Stop(); _vm.Live.Dispose(); };
         StateChanged += (_, _) =>
         {
-            if (WindowState == WindowState.Minimized) _vm.Live.Pause();
-            else _vm.Live.Resume();
+            if (WindowState == WindowState.Minimized)
+            {
+                _vm.Live.Pause();
+                _serviceStatusTimer.Stop();
+            }
+            else
+            {
+                _vm.Live.Resume();
+                _serviceStatusTimer.Start();
+            }
         };
         PreviewKeyDown += async (_, e) =>
         {

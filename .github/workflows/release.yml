@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v1.1 to build, check and publish a GitHub release with
+# Push a tag like v2.0.0 to build, check and publish a GitHub release with
 # XpsManager.exe and a .zip. Can also be run by hand for an existing tag.
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to release (e.g. v1.1)
+        description: Tag to release (e.g. v2.0.0)
         required: true
 
 permissions:
@@ -32,7 +32,7 @@ jobs:
         shell: pwsh
         run: |
           $v = $env:TAG.TrimStart('v')
-          if ($v -notmatch '^\d+\.\d+(\.\d+)?$') { throw "Tag '$env:TAG' isn't a version like v1.1" }
+          if ($v -notmatch '^\d+\.\d+(\.\d+)?$') { throw "Tag '$env:TAG' isn't a version like v2.0.0" }
           if ($v -match '^\d+\.\d+$') { $v = "$v.0" }
           "VERSION=$v" >> $env:GITHUB_ENV
 
@@ -46,8 +46,12 @@ jobs:
         shell: pwsh
         run: |
           $zip = "XpsManager-$env:TAG-win-x64.zip"
-          Compress-Archive -Path dist/XpsManager.exe, README.md -DestinationPath $zip
+          Compress-Archive -Path dist/XpsManager.exe, README.md, docs -DestinationPath $zip
           "ZIP=$zip" >> $env:GITHUB_ENV
+          @('dist/XpsManager.exe', $zip) | ForEach-Object {
+            $hash = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $(Split-Path -Leaf $_)"
+          } | Set-Content -Path SHA256SUMS.txt -Encoding ascii
 
       - name: Create release
         shell: pwsh
@@ -58,9 +62,17 @@ jobs:
           XPS Manager $env:TAG for Windows 11 (x64).
 
           - **XpsManager.exe**: download and run. Windows asks for administrator access, which is needed to change BIOS settings.
-          - **$env:ZIP**: the same app with the README.
+          - **$env:ZIP**: the same app with the README and technical, security and validation documentation.
+          - **SHA256SUMS.txt**: SHA-256 checksums for both downloads.
+          - **Automatic thermal switching**: optional background service follows Windows power mode, even with the app closed. Enabling it installs a protected copy in Program Files. Disable Dell Optimizer's sync first; remove the service from Settings → Automatic.
+          - Battery serial number and firmware-reported PPID (when available) are now shown in Activity.
+          - Event-driven service with a two-second settling period, manual overrides, crash recovery and no periodic BIOS polling. Startup is configured automatically; no login task is needed.
+          - Protected executable and settings, administrator-only service management, and restricted native DLL loading.
+
+          **Validation:** automated policy, debounce, battery and telemetry checks run in this workflow. AC/battery switching and service lifecycle checks passed on the target laptop. Energy saver, rapid replug, sleep/wake, reboot startup and the newer-version update offer still have deferred hardware checks. See the validation document included in the zip.
 
           Requires the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). Built for the Dell XPS 14 (DA14260).
           The exe isn't code-signed, so Windows SmartScreen may warn the first time: choose **More info › Run anyway**.
           "@
-          gh release create $env:TAG dist/XpsManager.exe $env:ZIP --title "XPS Manager $env:TAG" --notes $notes
+          $notes | Set-Content -Path release-notes.md -Encoding utf8
+          gh release create $env:TAG dist/XpsManager.exe $env:ZIP SHA256SUMS.txt --verify-tag --title "XPS Manager $env:TAG" --notes-file release-notes.md

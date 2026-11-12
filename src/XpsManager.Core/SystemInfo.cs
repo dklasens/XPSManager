@@ -50,20 +50,35 @@ public static class SystemInfo
     /// The Windows power mode in effect (Settings › Power › Power mode), or null if it can't be read.
     /// Energy saver overrides whatever mode is selected.
     /// </summary>
-    public static string? WindowsPowerMode(PowerStatus power)
+    public static string? WindowsPowerMode(PowerStatus power) => PowerModeLabel(ReadPowerMode(power));
+
+    public static WindowsPowerMode ReadPowerMode(PowerStatus power)
     {
-        if (power.EnergySaver) return "Energy saver";
-        if (PowerGetEffectiveOverlayScheme(out var overlay) != 0) return null;
-        return overlay.ToString() switch
+        if (power.EnergySaver) return Core.WindowsPowerMode.EnergySaver;
+        try
         {
-            "00000000-0000-0000-0000-000000000000" => "Balanced",
-            "961cc777-2547-4f9d-8174-7d86181b8a7a" => "Best power efficiency",
-            "3af9b8d9-7c97-431d-ad78-34a8bfea439f" => "Better performance",
-            "ded574b5-45a0-4f42-8737-46345c09c238" => "Best performance",
-            _ => "Custom"
-        };
+            if (PowerGetEffectiveOverlayScheme(out var overlay) != 0) return Core.WindowsPowerMode.Custom;
+            return overlay.ToString() switch
+            {
+                "00000000-0000-0000-0000-000000000000" => Core.WindowsPowerMode.Balanced,
+                "961cc777-2547-4f9d-8174-7d86181b8a7a" => Core.WindowsPowerMode.BestPowerEfficiency,
+                "3af9b8d9-7c97-431d-ad78-34a8bfea439f" => Core.WindowsPowerMode.BetterPerformance,
+                "ded574b5-45a0-4f42-8737-46345c09c238" => Core.WindowsPowerMode.BestPerformance,
+                _ => Core.WindowsPowerMode.Custom
+            };
+        }
+        catch (EntryPointNotFoundException) { return Core.WindowsPowerMode.Custom; }
     }
 
+    public static string PowerModeLabel(WindowsPowerMode mode) => mode switch
+    {
+        Core.WindowsPowerMode.EnergySaver => "Energy saver",
+        Core.WindowsPowerMode.BestPowerEfficiency => "Best power efficiency",
+        Core.WindowsPowerMode.Balanced => "Balanced",
+        Core.WindowsPowerMode.BetterPerformance => "Better performance",
+        Core.WindowsPowerMode.BestPerformance => "Best performance",
+        _ => "Custom / unavailable"
+    };
     /// <summary>
     /// The built-in panel's refresh rate (or the first active display if there's no built-in one).
     /// Uses QueryDisplayConfig in "virtual refresh rate aware" mode (Windows 11) so dynamic refresh rate

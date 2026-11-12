@@ -10,12 +10,18 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <StartupObject>XpsManager.App.Program</StartupObject>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\XpsManager.ico</ApplicationIcon>
     <AssemblyName>XpsManager</AssemblyName>
     <Product>XPS Manager</Product>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.12" />
+  </ItemGroup>
 
   <!-- Fonts and icon are compiled into the assembly so a single-file publish carries them. -->
   <ItemGroup>

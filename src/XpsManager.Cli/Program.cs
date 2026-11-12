@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using XpsManager.Core;
+using System.ServiceProcess;
 
 // Usage (elevated):
 //   xpsm status
@@ -8,6 +9,30 @@ using XpsManager.Core;
 //   xpsm charge Custom <start> <stop>
 try
 {
+    if (args is ["auto", var action])
+    {
+        using var service = new ServiceController("XpsManagerService");
+        if (action is "on" or "off")
+        {
+            var status = service.Status; // Fail before saving when the service isn't installed.
+            AutoSwitchStore.Write(AutoSwitchStore.Read() with { Enabled = action == "on" });
+            if (status != ServiceControllerStatus.Running && action == "on")
+            {
+                service.Start();
+                service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(30));
+            }
+            service.Refresh();
+            if (service.Status == ServiceControllerStatus.Running) service.ExecuteCommand(128);
+        }
+        else if (action != "status") throw new ArgumentException("usage: xpsm auto status|on|off");
+        var config = AutoSwitchStore.Read();
+        Console.WriteLine($"automatic: {(config.Enabled ? "on" : "off")}");
+        try { Console.WriteLine($"service: {service.Status}"); }
+        catch (InvalidOperationException) { Console.WriteLine("service: not installed"); }
+        foreach (var row in config.Mapping) Console.WriteLine($"{row.Key}: {row.Value}");
+        Console.WriteLine(AutoSwitchStore.Status());
+        return 0;
+    }
     var sw = Stopwatch.StartNew();
     var power = new PowerSettings(new BiosClient(BiosClient.DefaultKeyCachePath));
     var state = power.Read();
@@ -27,14 +52,14 @@ try
             state = Apply(power, state, state.ToChange() with { ChargeMode = mode, ChargeStart = int.Parse(start), ChargeStop = int.Parse(stop) });
             break;
         default:
-            Console.Error.WriteLine("usage: xpsm [status | thermal <mode> | charge <mode> [start stop]]");
+            Console.Error.WriteLine("usage: xpsm [status | thermal <mode> | charge <mode> [start stop] | auto status|on|off]");
             return 2;
     }
 
     Print(state);
     return 0;
 }
-catch (Exception e) when (e is BiosException or ArgumentException)
+catch (Exception e) when (e is BiosException or ArgumentException or InvalidOperationException or UnauthorizedAccessException or System.ComponentModel.Win32Exception or System.ServiceProcess.TimeoutException)
 {
     Console.Error.WriteLine($"error: {e.Message}");
     return 1;

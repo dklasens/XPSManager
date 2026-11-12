@@ -33,12 +33,26 @@ public sealed class PowerSettings(BiosClient bios)
     /// <summary>Dell requires the stop threshold to be at least this far above the start.</summary>
     public const int MinChargeGap = 5;
 
+    public BiosAttribute ReadThermal() => Require(bios.ReadAttributes([ThermalAttr]), ThermalAttr);
+
+    /// <summary>Service boundary: can write only the thermal attribute, after fresh validation.</summary>
+    public void SetThermal(string value)
+    {
+        var current = ReadThermal();
+        if (current.IsReadOnly || !current.PossibleValues.Contains(value, StringComparer.Ordinal))
+            throw new BiosException($"Thermal mode '{value}' is not writable on this BIOS.");
+        if (current.CurrentValue == value) return;
+        bios.SetAttribute(ThermalAttr, value);
+        if (ReadThermal().CurrentValue != value) throw new BiosException("Thermal mode did not verify after writing.");
+    }
+
     static readonly SettingOption[] KnownThermalModes =
     [
         new("Optimized", "Optimized", "Balanced performance, fan noise and temperature. BIOS default."),
         new("Cool", "Cool", "Keeps the chassis cooler; performance and fans are reduced to match."),
         new("Quiet", "Quiet", "Keeps fan noise down at the cost of performance."),
         new("Performance", "Ultra Performance", "Maximum sustained performance; more heat and fan noise.", "Ultra"),
+        new("UltraPerformance", "Ultra Performance", "Maximum sustained performance; more heat and fan noise.", "Ultra"),
     ];
 
     static readonly SettingOption[] KnownChargeModes =

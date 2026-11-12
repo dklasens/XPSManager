@@ -201,6 +201,9 @@
             <TextBlock Text="{Binding SelectedThermalDescription}" Style="{StaticResource Description}" Margin="0,12,0,0" />
 
             <Border Height="1" Background="{StaticResource Rule}" Margin="0,28,0,20" />
+            <local:AutomaticPanel DataContext="{Binding Automatic}" />
+
+            <Border Height="1" Background="{StaticResource Rule}" Margin="0,28,0,20" />
 
             <TextBlock Text="Battery charging" Style="{StaticResource Heading}" />
             <ItemsControl ItemsSource="{Binding ChargeOptions}" Style="{StaticResource SegmentGroup}" />

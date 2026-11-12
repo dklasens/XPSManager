@@ -39,6 +39,8 @@ public sealed class TelemetryViewModel : Observable, IDisposable
     }
 
     public string WindowsMode => _s?.WindowsMode ?? "—";
+    public string BatterySerial => _s?.Battery.Serial ?? "—";
+    public string BatteryPpid => _s?.Battery.Ppid ?? "—";
 
     public string Display => _s?.Display is { } d
         ? string.Join(" · ", new[]

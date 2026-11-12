@@ -1,6 +1,6 @@
 # XPS Manager: technical notes
 
-Proof of concept for changing Dell XPS BIOS power settings from Windows, using Dell's BIOS WMI interface (`root\dcim\sysman\biosattributes`). Tested on an XPS 14 DA14260 with BIOS 1.11.0.
+Windows app and optional background service for changing Dell XPS BIOS power settings, using Dell's BIOS WMI interface (`root\dcim\sysman\biosattributes`). Tested on an XPS 14 DA14260 with BIOS 1.11.0.
 
 Settings it manages:
 - **Thermal mode**: Optimized, Cool, Quiet or Ultra Performance
@@ -29,12 +29,26 @@ The **Activity** tab (Ctrl+2; Ctrl+1 returns to Settings) breaks this down:
 
 All of these readings are read-only; nothing in them changes a setting. The checks in `tools/TelemetryChecks` cover battery decoding, the time-left estimator and GPU decoding: `dotnet run --project tools/TelemetryChecks`. Add `-- --live` to print one live sample, or `-- --render` to render the Activity view with fixture data to `artifacts/activity-panel.png`.
 
-## Projects
+## Automatic thermal policy (v2)
+
+`AutoSwitchPolicy` is pure mapping/validation, and `SwitchDebounce` uses a supplied monotonic clock. `AutoSwitcher` registers effective-power-mode V2 notifications and performs one trailing-edge check after two quiet seconds. It re-reads overlay and Energy saver state, compares the actual `(mode, AC/DC)` pair to the last check, and ignores transient Game Mode notifications. Startup, resume and command 128 force a fresh evaluation. No periodic BIOS polling runs in the service.
+
+`Program.Main` dispatches `--service` to `XpsManagerService`, without constructing WPF. The service registers AC/DC, Energy saver and console display notifications and handles resume plus session unlock as a safety net. Unregistering callbacks occurs outside the switcher's lock to avoid teardown deadlock. Only `PowerSettings.SetThermal` is used by the service; it validates the advertised values and verifies the write.
+
+Configuration uses the 64-bit HKLM view at `SOFTWARE\XpsManager\AutoSwitch`. `Configuration` is an atomic JSON snapshot of Enabled and the map; the plan's `Enabled` and `Map.*` values are mirrored for inspection and accepted as migration defaults when no snapshot exists. LastAppliedMode/At, LastTrigger and LastError are separate status values. Edit using the app or CLI so the snapshot and mirrors remain consistent. The installer explicitly protects the key and installation directory with administrator/SYSTEM write permissions.
+
+The same framework-dependent single-file exe serves the UI and service. Development build outputs are rejected by the installer because they need adjacent DLLs. Installation rejects reparse points, uses quoted SCM paths, stages a fresh file before replacement, and removes only its own installed file (never recursively deletes a directory). A new app version offers an installed-service update. Removal from the installed running UI is rejected with instructions to use the downloaded copy.
+
+See [V2-VALIDATION.md](V2-VALIDATION.md) for live evidence and release gates. Windows notification contracts: [effective mode registration](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powerregisterforeffectivepowermodenotifications) and [power event registration](https://learn.microsoft.com/en-us/windows/win32/power/registering-for-power-events).
+
+Battery serial uses the `BatterySerialNumber` IOCTL information level, falling back to a leading decimal `Win32_Battery.DeviceID` serial formatted as hex. PPID is read once from an OEM string in SMBIOS type 22 through `MSSmBios_RawSMBiosTables`. The parser requires a single Dell battery record and one 20-character PPID, optionally followed by an Axx revision, matching [Dell's documented format](https://www.dell.com/support/kbdoc/en-us/000125347/how-to-obtain-a-dell-pcs-motherboard-ppid-piece-part-identification-without-going-inside-the-pc-and-removing-parts). Missing or ambiguous sources return unavailable.
+
+## Project layout
 
 | Project | What it is |
 |---|---|
 | `src/XpsManager.Core` | WMI wrapper (`BiosClient`) and power-settings logic (`PowerSettings`): validates input, orders the writes, and reads each change back to confirm it |
-| `src/XpsManager.App` | WPF app (Fluent theme) that asks for admin once at launch |
+| `src/XpsManager.App` | WPF app (Cobalt theme), service host and installer; asks for admin at launch |
 | `src/XpsManager.Cli` | `xpsm` command-line tool for scripting and testing |
 
 ## Single exe
@@ -44,7 +58,7 @@ dotnet publish src/XpsManager.App -p:PublishProfile=SingleFile
 .\dist\XpsManager.exe   # shows a UAC prompt
 ```
 
-This builds one 2.6 MB `XpsManager.exe` with the fonts and icon embedded. It needs the .NET 10 Desktop Runtime, which is already on this machine. For a machine without the runtime, add `-p:SelfContained=true -p:EnableCompressionInSingleFile=true`. That file is much larger and slower to open.
+This builds one roughly 3 MB `XpsManager.exe` with the fonts and icon embedded. It needs the .NET 10 Desktop Runtime. For a machine without the runtime, add `-p:SelfContained=true -p:EnableCompressionInSingleFile=true`. That file is much larger and slower to open.
 
 ## Design
 
