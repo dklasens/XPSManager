@@ -9,6 +9,7 @@ $msiName = "XpsManager-$Version-win-x64.msi"
 $zipName = "XpsManager-$Version-win-x64.zip"
 Copy-Item -LiteralPath (Join-Path $repo "installer/bin/Release/$msiName") -Destination $package
 Copy-Item -LiteralPath (Join-Path $repo 'README.md') -Destination $package
+Copy-Item -LiteralPath (Join-Path $repo 'docs') -Destination $package -Recurse
 Copy-Item -LiteralPath (Join-Path $repo "docs/releases/v$Version.md") -Destination (Join-Path $release 'RELEASE-NOTES.md')
 $msiHash = (Get-FileHash -LiteralPath (Join-Path $package $msiName) -Algorithm SHA256).Hash.ToLowerInvariant()
 "$msiHash  $msiName" | Set-Content -LiteralPath (Join-Path $package 'SHA256SUMS.txt') -Encoding ascii
