@@ -1,5 +1,12 @@
 [
   {
+    "date": "2026-11-12",
+    "macrostructure": "Tabbed utility (adapted: app window)",
+    "theme": "Cobalt",
+    "enrichment": "none",
+    "brief": "Compact shared summary with separate Settings, Automatic and Activity tabs; preserve readable controls and avoid default scrolling"
+  },
+  {
     "date": "2026-09-30",
     "macrostructure": "Stat-Led (adapted: app window)",
     "theme": "Cobalt",

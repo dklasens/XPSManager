@@ -61,8 +61,10 @@ public sealed class AutoSwitcher : IDisposable
                     ? input.Ac == true ? "plugged in" : input.Ac == false ? "unplugged" : signal.Trigger
                     : signal.Trigger;
                 _lastInput = input;
-                if (input.Mode == WindowsPowerMode.Custom) return;
-                _settings ??= new PowerSettings(new BiosClient(BiosClient.DefaultKeyCachePath));
+                if (input.Mode == WindowsPowerMode.Custom || !config.Mapping.TryGetValue(input.Mode, out var mapped) || string.IsNullOrEmpty(mapped))
+                { AutoSwitchStore.Record(null, trigger, null); return; }
+                _settings ??= new PowerSettings(new BiosClient());
+                using var operation = _settings.EnterOperation();
                 var thermal = _settings.ReadThermal();
                 var decision = AutoSwitchPolicy.Evaluate(input.Mode, config, thermal.PossibleValues);
                 if (decision.Error is { } error) { Report(null, trigger, error); return; }
@@ -75,6 +77,7 @@ public sealed class AutoSwitcher : IDisposable
             }
             catch (Exception e)
             {
+                _lastInput = null; // A later event must retry even when the power mode is unchanged.
                 _settings = null; // Reconnect the WMI provider at the next event.
                 Report(null, signal.Trigger, e.Message);
             }

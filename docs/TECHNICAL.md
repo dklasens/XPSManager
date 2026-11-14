@@ -8,13 +8,17 @@ Settings it manages:
 
 ## Live readings
 
-The readout band at the top shows what's in effect and what the machine is doing, updated every second while the window is open (sampling pauses while minimised):
+The compact readout band shows battery percentage/source and the active thermal, charging and Windows power modes. Live readings update once a second while the window is visible; sampling pauses while minimised.
 
-- **Battery** percentage and time left. Until it has a full minute of readings it shows Windows' estimate, then its own estimate from a one-minute rolling average of battery draw. While charging it shows a rough time to full.
-- **In effect:** BIOS thermal and charge modes (a pending change shows in blue underneath), the Windows power mode, and the built-in display's refresh rate and brightness. With dynamic refresh rate on, it shows the selected rate ("Dynamic 120 Hz"); Windows drops to 60 Hz when nothing on screen is moving, and doesn't expose the instantaneous rate.
-- **Live strip:** battery watts, CPU package watts, average P-core clock and GPU clock. The P-core or GPU label turns amber and reads "LIMITED" when the CPU or GPU is being held back by a power, thermal or platform limit.
+The default 600 × 820 window has three focused tabs:
 
-The **Activity** tab (Ctrl+2; Ctrl+1 returns to Settings) breaks this down:
+- **Settings (Ctrl+1):** manual thermal and charging controls, including Custom thresholds. Pending changes appear beside their controls; the BIOS action bar belongs to this tab.
+- **Automatic (Ctrl+2):** mappings, service status, warnings and service management actions.
+- **Activity (Ctrl+3):** the full battery, processor and graphics readout, display details and battery identity.
+
+The render checks exercise all three tabs at 600 and 560 DIPs wide, including Custom charging, pending changes, the Optimizer warning and an available service update. Scrolling remains an accessibility fallback for shorter work areas and unusually long error text. A 150% raster preview checks the layout at the owner's display scaling.
+
+The Activity tab includes:
 
 | Section | Readings | Source |
 |---|---|---|
@@ -31,13 +35,17 @@ All of these readings are read-only; nothing in them changes a setting. The chec
 
 ## Automatic thermal policy (v2)
 
+The v2.1 charging override is separate from the thermal policy: `ChargeBoost` persists a UTC deadline in the `ChargeBoost` JSON value under `AutoSwitchStore.KeyPath`, then writes `PrimaryBattChargeCfg=Express`. `ChargeBoostMonitor` checks the saved deadline every 30 seconds and on service start/resume, without accessing firmware until due. Restoration writes only `PrimaryBattChargeCfg=PrimAcUse`, verifies it and clears the deadline. Errors retain the deadline for retry. The shared BIOS operation mutex serializes start, expiry, early return and other BIOS operations. The UI refreshes timer status every three seconds and re-reads BIOS after a timer-state transition. The 24-hour interval is wall-clock time, including time asleep or powered off; system-clock changes affect expiry.
+
+The UI version comes from assembly informational version (without the commit suffix), sourced from `Directory.Build.props` or the build version override. The installer build script defaults to that same version.
+
 `AutoSwitchPolicy` is pure mapping/validation, and `SwitchDebounce` uses a supplied monotonic clock. `AutoSwitcher` registers effective-power-mode V2 notifications and performs one trailing-edge check after two quiet seconds. It re-reads overlay and Energy saver state, compares the actual `(mode, AC/DC)` pair to the last check, and ignores transient Game Mode notifications. Startup, resume and command 128 force a fresh evaluation. No periodic BIOS polling runs in the service.
 
-`Program.Main` dispatches `--service` to `XpsManagerService`, without constructing WPF. The service registers AC/DC, Energy saver and console display notifications and handles resume plus session unlock as a safety net. Unregistering callbacks occurs outside the switcher's lock to avoid teardown deadlock. Only `PowerSettings.SetThermal` is used by the service; it validates the advertised values and verifies the write.
+`Program.Main` dispatches `--service` to `XpsManagerService`, without constructing WPF. The service registers AC/DC, Energy saver and console display notifications and handles resume plus session unlock as a safety net. Unregistering callbacks occurs outside the switcher's lock to avoid teardown deadlock. Only `PowerSettings.SetThermal` is used by the service; it validates the advertised values and verifies the write. `BiosOperationGate` coordinates complete operations across the app, CLI and service with a global mutex restricted to administrators and SYSTEM. Manual apply re-reads under that lock, preserves unedited fields, checks firmware read-only flags and verifies the resulting state. Firmware writes are not transactional; partial failures require a re-read.
 
 Configuration uses the 64-bit HKLM view at `SOFTWARE\XpsManager\AutoSwitch`. `Configuration` is an atomic JSON snapshot of Enabled and the map; the plan's `Enabled` and `Map.*` values are mirrored for inspection and accepted as migration defaults when no snapshot exists. LastAppliedMode/At, LastTrigger and LastError are separate status values. Edit using the app or CLI so the snapshot and mirrors remain consistent. The installer explicitly protects the key and installation directory with administrator/SYSTEM write permissions.
 
-The same framework-dependent single-file exe serves the UI and service. Development build outputs are rejected by the installer because they need adjacent DLLs. Installation rejects reparse points, uses quoted SCM paths, stages a fresh file before replacement, and removes only its own installed file (never recursively deletes a directory). A new app version offers an installed-service update. Removal from the installed running UI is rejected with instructions to use the downloaded copy.
+The portable development build uses the same framework-dependent single-file exe for the UI and service. The v2.0.1 MSI instead installs a self-contained app and runtime directory; Windows Installer owns its service, updates and removal. MSI repair/upgrade preserves settings, uninstall retains settings for reinstall, and fresh installation leaves automatic mode off. MSI service startup is automatic with two 30-second recovery attempts. See RELEASE-READINESS.md for build and validation details. Development build outputs are rejected by the installer because they need adjacent DLLs. Installation rejects reparse points, uses quoted SCM paths, stages a fresh file before replacement, and removes only its own installed file (never recursively deletes a directory). A new app version offers an installed-service update. Removal from the installed running UI is rejected with instructions to use the downloaded copy.
 
 See [V2-VALIDATION.md](V2-VALIDATION.md) for live evidence and release gates. Windows notification contracts: [effective mode registration](https://learn.microsoft.com/en-us/windows/win32/api/powersetting/nf-powersetting-powerregisterforeffectivepowermodenotifications) and [power event registration](https://learn.microsoft.com/en-us/windows/win32/power/registering-for-power-events).
 
@@ -81,7 +89,7 @@ xpsm charge Adaptive
 
 ## Notes
 
-- **Speed:** listing all attributes takes about 2 s, because the provider reads all of them from firmware even when the query is filtered. Fetching one attribute by its key takes about 25 ms. The first run discovers the keys and caches them in `%LOCALAPPDATA%\XpsManager\attribute-keys.json`. After that, a read takes about 110 ms and a write plus read-back takes about 100â€“250 ms. Each fetched attribute is checked by name, so a stale cache triggers a new discovery rather than returning wrong data.
+- **Speed:** listing all attributes takes about 2 s, because the provider reads all of them from firmware even when the query is filtered. Fetching one attribute by its key takes about 25 ms. Each process discovers the keys once and caches them only in memory. The elevated app no longer reads or writes a cache in user-controlled LocalAppData. After first discovery, a read takes about 110 ms and a write plus read-back takes about 100â€“250 ms. Each fetched attribute is checked by name, so a stale cache triggers a new discovery rather than returning wrong data.
 - **Password:** writes assume no BIOS admin password is set.
 - **Custom thresholds:** they can only be changed while the charge mode is `Custom`, and stop must be at least 5% above start.
 

@@ -39,29 +39,32 @@ public sealed class BiosWriteException(string attribute, string value, int statu
 /// </summary>
 /// <remarks>
 /// Enumerating attributes costs ~2 s (the provider walks all ~130 in firmware, even with a WHERE
-/// clause), but fetching one by its key costs ~25 ms. So keys are discovered once, cached to disk,
-/// and each fetched instance is checked by name; a stale cache triggers rediscovery.
+/// clause), but fetching one by its key costs ~25 ms. Keys are cached in memory, and each fetched
+/// instance is checked by name; a stale key triggers rediscovery.
 /// </remarks>
-public sealed class BiosClient
+public interface IBiosClient
+{
+    IDisposable EnterOperation();
+    IReadOnlyDictionary<string, BiosAttribute> ReadAttributes(IEnumerable<string> names);
+    void SetAttribute(string name, string value);
+}
+
+public sealed class BiosClient : IBiosClient
 {
     const string Namespace = @"root\dcim\sysman\biosattributes";
     const string EnumClass = "EnumerationAttribute";
     const string IntClass = "IntegerAttribute";
 
-    public static string DefaultKeyCachePath { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XpsManager", "attribute-keys.json");
-
     readonly ManagementScope _scope = new(Namespace);
-    readonly string? _keyCachePath;
-    Dictionary<string, AttributeKey> _keys;
+    Dictionary<string, AttributeKey> _keys = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <param name="keyCachePath">Where to persist attribute keys between runs; null keeps them in memory only.</param>
-    public BiosClient(string? keyCachePath = null)
+    public BiosClient()
     {
-        _keyCachePath = keyCachePath;
-        _keys = AttributeKey.Load(keyCachePath);
+        // Keep discovery in memory: elevated processes must not overwrite user-controlled cache paths.
         Wmi(_scope.Connect);
     }
+
+    public IDisposable EnterOperation() => new BiosOperationGate();
 
     /// <summary>Reads every attribute (slow, ~2 s) and refreshes the key cache.</summary>
     public IReadOnlyDictionary<string, BiosAttribute> ReadAttributes()
@@ -83,7 +86,6 @@ public sealed class BiosClient
         }
 
         _keys = keys;
-        AttributeKey.Save(_keyCachePath, keys);
         return result;
     }
 
@@ -111,7 +113,8 @@ public sealed class BiosClient
         if (!_keys.TryGetValue(name, out var key))
             return null;
 
-        var path = $"{key.ClassName}.InstanceName=\"{key.InstanceName.Replace(@"\", @"\\")}\"";
+        var instance = key.InstanceName.Replace(@"\", @"\\").Replace("\"", "\\\"");
+        var path = $"{key.ClassName}.InstanceName=\"{instance}\"";
         try
         {
             using var mo = new ManagementObject(_scope, new ManagementPath(path), null);
@@ -119,7 +122,7 @@ public sealed class BiosClient
             var attr = ToAttribute(mo, key.ClassName);
             return string.Equals(attr.Name, name, StringComparison.OrdinalIgnoreCase) ? attr : null;
         }
-        catch (ManagementException e) when (e.ErrorCode == ManagementStatus.NotFound)
+        catch (BiosException e) when (e.InnerException is ManagementException { ErrorCode: ManagementStatus.NotFound })
         {
             return null;
         }
@@ -187,6 +190,10 @@ public sealed class BiosClient
         catch (ManagementException e) when (e.ErrorCode is ManagementStatus.InvalidNamespace or ManagementStatus.InvalidClass)
         {
             throw new BiosException("Dell BIOS WMI interface not found on this machine.", e);
+        }
+        catch (Exception e) when (e is ManagementException or System.Runtime.InteropServices.COMException)
+        {
+            throw new BiosException("The Dell BIOS provider could not complete the operation. Re-read settings before retrying. " + e.Message, e);
         }
     }
 

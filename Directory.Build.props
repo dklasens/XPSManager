@@ -1,8 +1,11 @@
 <Project>
   <!-- One version for every project. Release builds override it from the git tag (v1.1 -> 1.1.0). -->
   <PropertyGroup>
-    <Version>2.0.0</Version>
+    <Version>2.1.0</Version>
     <Authors>David Klasens</Authors>
     <Product>XPS Manager</Product>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <!-- Failed advisory lookups must not silently produce a 'clean' release. -->
+    <WarningsAsErrors>$(WarningsAsErrors);NU1900;NU1901;NU1902;NU1903;NU1904;NU1905</WarningsAsErrors>
   </PropertyGroup>
 </Project>

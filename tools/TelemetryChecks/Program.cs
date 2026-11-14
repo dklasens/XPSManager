@@ -43,6 +43,8 @@ internal static class Program
         GpuChecks();
         Console.WriteLine("PASS: GPU decoding checks");
         AutoSwitchChecks();
+        PowerSettingsChecks.Run();
+        ChargeBoostChecks.Run();
         Console.WriteLine("PASS: automatic thermal policy and debounce checks");
         BatteryIdentityChecks();
         Console.WriteLine("PASS: battery firmware identity checks");
@@ -60,6 +62,7 @@ internal static class Program
             if (IntelGraphics.OpenError is { } error) Console.WriteLine($"Intel graphics library: {error}");
         }
         if (args.Contains("--render")) Render();
+        if (args.Contains("--access-checks")) AccessChecks.Run();
         if (args is ["--service-checks", var exe]) ServiceChecks.Run(exe);
     }
 
@@ -202,34 +205,119 @@ internal static class Program
         automatic.Rows.Add(new("Best power efficiency", "Also used for Energy saver", WindowsPowerMode.BestPowerEfficiency, "Quiet"));
         automatic.Rows.Add(new("Balanced", "Also used for Better performance", WindowsPowerMode.Balanced, "Optimized"));
         automatic.Rows.Add(new("Best performance", "Maximum performance in Windows", WindowsPowerMode.BestPerformance, "UltraPerformance"));
-        OptionViewModel Option(string value, string label, string? shortLabel = null) => new(new(value, label, "", shortLabel), value == "Quiet", _ => { });
-        var window = new MainWindow { DataContext = new
+        // Exercise the tallest normal state without installing a service or reading real configuration.
+        automatic.Enabled = true;
+        foreach (var property in new[] { "Installed", "OptimizerInstalled", "UpdateAvailable" })
+            typeof(AutomaticViewModel).GetProperty(property)!.SetValue(automatic, true);
+        typeof(AutomaticViewModel).GetProperty("Status")!.SetValue(automatic, "On. Last set Ultra Performance at 16:48 (plugged in).");
+        OptionViewModel Option(string value, string label, string? shortLabel = null) =>
+            new(new(value, label, "", shortLabel), value is "UltraPerformance" or "PrimAcUse", _ => { })
+            { IsSelected = value is "Quiet" or "Custom" };
+        var window = new MainWindow { DataContext = new SettingsPreview
         {
             Device = new DeviceInfo("XPS 14 DA14260", "fixture"), Live = new TelemetryViewModel(sample),
-            ActiveThermal = "Quiet", ActiveCharge = "Custom 50–80%", PendingThermal = "", PendingCharge = "",
-            HasPendingThermal = false, HasPendingCharge = false, Status = "Preview · fixture data", StatusIsError = false,
-            CanRefresh = true, IsLoaded = true, CanApply = false, ApplyLabel = "Write to BIOS", IsCustomCharge = false,
+            ActiveThermal = "Ultra Performance", ActiveCharge = "Primarily AC use", PendingThermal = "→ Quiet", PendingCharge = "→ Custom 50–80%",
+            HasPendingThermal = true, HasPendingCharge = true, Status = "Preview · fixture data", StatusIsError = false,
+            CanRefresh = true, IsLoaded = true, CanApply = true, ApplyLabel = "Write to BIOS", IsCustomCharge = true,
+            StartMin = 50, StartMax = 95, StopMin = 55, StopMax = 100, ChargeStart = 50d, ChargeStop = 80d,
             SelectedThermalDescription = "Keeps fan noise down at the cost of performance.",
             SelectedChargeDescription = "You choose when charging starts and stops.", Automatic = automatic,
             ThermalOptions = new[] { Option("Optimized", "Optimized"), Option("Cool", "Cool"), Option("Quiet", "Quiet"), Option("UltraPerformance", "Ultra Performance", "Ultra") },
-            ChargeOptions = new[] { Option("Adaptive", "Adaptive"), Option("Standard", "Standard"), Option("Express", "Express"), Option("PrimAcUse", "Primarily AC", "Mostly AC"), Option("Custom", "Custom") }
+            ChargeOptions = new[] { Option("Adaptive", "Adaptive"), Option("Standard", "Standard"), Option("Express", "ExpressCharge", "Express"), Option("PrimAcUse", "Primarily AC use", "Mostly AC"), Option("Custom", "Custom") }
         }};
         // Render the actual content without showing the window or invoking its live Loaded handler.
         var content = (FrameworkElement)window.Content;
         ((System.Windows.Controls.DockPanel)content).Background = (Brush)app.FindResource("Paper");
         content.Width = 600;
-        content.Height = 820;
-        content.Measure(new Size(600, 820));
-        content.Arrange(new Rect(0, 0, 600, 820));
+        content.Height = 780; // Reserve 40 DIPs for native window chrome at the 820-DIP default height.
+        content.Measure(new Size(content.Width, content.Height));
+        content.Arrange(new Rect(0, 0, content.Width, content.Height));
         app.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         content.UpdateLayout();
-        var bitmap = new RenderTargetBitmap(600, 820, 96, 96, PixelFormats.Pbgra32);
+        var settingsScroll = (System.Windows.Controls.ScrollViewer)window.FindName("SettingsScroll");
+        Console.WriteLine($"Settings viewport={settingsScroll.ViewportHeight:0.0}, content={settingsScroll.ExtentHeight:0.0}");
+        var bitmap = new RenderTargetBitmap(600, 780, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(content);
         using var output = File.Create("artifacts/settings-v2.png");
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
         encoder.Save(output);
         Console.WriteLine("Rendered artifacts/settings-v2.png (fixture data)");
+        Check(settingsScroll.ScrollableHeight < 1, $"Settings fits at default size (overflow {settingsScroll.ScrollableHeight:0.0})");
+        // DPI changes raster size, not the WPF layout; verify a 150% export matching the user's screenshot.
+        var scaled = new RenderTargetBitmap(900, 1170, 144, 144, PixelFormats.Pbgra32);
+        scaled.Render(content);
+        using (var file = File.Create("artifacts/settings-v2-150.png"))
+        {
+            var png = new PngBitmapEncoder();
+            png.Frames.Add(BitmapFrame.Create(scaled));
+            png.Save(file);
+        }
+        ((System.Windows.Controls.RadioButton)window.FindName("AutomaticTab")).IsChecked = true;
+        app.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        content.UpdateLayout();
+        var automaticScroll = (System.Windows.Controls.ScrollViewer)window.FindName("AutomaticScroll");
+        var autoBitmap = new RenderTargetBitmap(600, 780, 96, 96, PixelFormats.Pbgra32);
+        autoBitmap.Render(content);
+        using (var file = File.Create("artifacts/automatic-window-v2.png"))
+        {
+            var png = new PngBitmapEncoder();
+            png.Frames.Add(BitmapFrame.Create(autoBitmap));
+            png.Save(file);
+        }
+        Check(automaticScroll.ScrollableHeight < 1, $"Automatic fits at default size (overflow {automaticScroll.ScrollableHeight:0.0})");
+        ((System.Windows.Controls.RadioButton)window.FindName("ActivityTab")).IsChecked = true;
+        ((ActivityPanel)window.FindName("Activity")).DataContext = new TelemetryViewModel(sample);
+        app.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        content.UpdateLayout();
+        var activityScroll = (System.Windows.Controls.ScrollViewer)window.FindName("ActivityScroll");
+        Check(activityScroll.ScrollableHeight < 1, $"Activity fits at default size (overflow {activityScroll.ScrollableHeight:0.0})");
+        var activity = new RenderTargetBitmap(600, 780, 96, 96, PixelFormats.Pbgra32);
+        activity.Render(content);
+        using (var file = File.Create("artifacts/activity-window-v2.png"))
+        {
+            var png = new PngBitmapEncoder();
+            png.Frames.Add(BitmapFrame.Create(activity));
+            png.Save(file);
+        }
+        // A shorter window can scroll as an accessibility fallback; the supported narrow width still fits.
+        content.Width = 560;
+        foreach (var (tab, scrollName) in new[] { ("SettingsTab", "SettingsScroll"), ("AutomaticTab", "AutomaticScroll"), ("ActivityTab", "ActivityScroll") })
+        {
+            ((System.Windows.Controls.RadioButton)window.FindName(tab)).IsChecked = true;
+            content.Measure(new Size(560, 780));
+            content.Arrange(new Rect(0, 0, 560, 780));
+            app.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            content.UpdateLayout();
+            var scroll = (System.Windows.Controls.ScrollViewer)window.FindName(scrollName);
+            Check(scroll.ScrollableHeight < 1, $"{tab} fits at 560 DIPs wide (overflow {scroll.ScrollableHeight:0.0})");
+        }
+        Console.WriteLine("PASS: all three tabs fit at 600 and 560 DIPs wide, including Custom charging and service warnings");
+        window.DataContext = new SettingsPreview
+        {
+            Device = new DeviceInfo("XPS 14 DA14260", "fixture"), Live = new TelemetryViewModel(sample), Automatic = automatic,
+            ActiveThermal = "Optimized", ActiveCharge = "ExpressCharge", CanRefresh = true, IsLoaded = true,
+            ApplyLabel = "Write to BIOS", Status = "ExpressCharge enabled for 24 hours.",
+            BoostActive = true, CanReturnFromBoost = true, CanEditCharging = false,
+            BoostStatus = "Returns to Primarily AC Use on Sun 15 Nov, 09:30. You can close the app.",
+            SelectedThermalDescription = "Balanced performance, fan noise and temperature. BIOS default.",
+            SelectedChargeDescription = "Charges faster; more wear on the battery over time.",
+            ThermalOptions = [new(new("Optimized", "Optimized", ""), true, _ => { })],
+            ChargeOptions = [new(new("Express", "ExpressCharge", ""), true, _ => { })]
+        };
+        ((System.Windows.Controls.RadioButton)window.FindName("SettingsTab")).IsChecked = true;
+        app.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        content.UpdateLayout();
+        Check(settingsScroll.ScrollableHeight < 1, "active ExpressCharge timer fits at narrow width");
+        var boostBitmap = new RenderTargetBitmap(560, 780, 96, 96, PixelFormats.Pbgra32);
+        boostBitmap.Render(content);
+        using (var file = File.Create("artifacts/expresscharge-active.png"))
+        {
+            var png = new PngBitmapEncoder();
+            png.Frames.Add(BitmapFrame.Create(boostBitmap));
+            png.Save(file);
+        }
+        Console.WriteLine("Rendered artifacts/expresscharge-active.png (fixture data)");
     }
 
     static void RenderAutomatic(Application app)

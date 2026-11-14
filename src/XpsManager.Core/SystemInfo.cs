@@ -30,7 +30,7 @@ public static class SystemInfo
             var version = bios.Get().Cast<ManagementObject>().FirstOrDefault()?["SMBIOSBIOSVersion"] as string;
             return new DeviceInfo(model ?? "Unknown model", version ?? "?");
         }
-        catch (ManagementException)
+        catch (Exception e) when (e is ManagementException or COMException or UnauthorizedAccessException)
         {
             return new DeviceInfo("Unknown model", "?");
         }

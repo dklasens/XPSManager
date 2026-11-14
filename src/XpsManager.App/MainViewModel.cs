@@ -55,6 +55,84 @@ public sealed class MainViewModel : Observable
     bool _statusIsError;
     double _chargeStart, _chargeStop;
     int _startMin, _startMax = 100, _stopMin, _stopMax = 100;
+    readonly ChargeBoostStore _boostStore = new();
+    ChargeBoostState? _boostState;
+    bool _boostReadFailed;
+    string _boostStatus = "ExpressCharge to 100% for 24 hours, then return to Primarily AC Use. Works with the app closed.";
+
+    public string AppVersion => "v" + (typeof(MainViewModel).Assembly
+        .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion.Split('+')[0]
+        ?? typeof(MainViewModel).Assembly.GetName().Version?.ToString(3) ?? "unknown");
+    public bool BoostActive => _boostState is not null;
+    public bool CanEditCharging => !IsBusy && !BoostActive && !_boostReadFailed;
+    public bool CanStartBoost => CanEditCharging && !HasChanges && _state is not null
+        && _state.ChargeModes.Any(o => o.Value == PowerSettings.ExpressChargeMode)
+        && _state.ChargeModes.Any(o => o.Value == PowerSettings.PrimarilyAcChargeMode);
+    public bool CanReturnFromBoost => BoostActive && !IsBusy && !HasChanges;
+    public string BoostStatus => _boostStatus;
+
+    public void RefreshBoostStatus()
+    {
+        if (IsBusy) return;
+        try
+        {
+            _boostState = _boostStore.Read();
+            _boostReadFailed = false;
+            _boostStatus = _boostState is { } state
+                ? !string.IsNullOrEmpty(state.Error) ? state.Error + " The return timer is still saved; you can retry Return now."
+                : state.ExpiresAt <= DateTimeOffset.UtcNow ? "Return to Primarily AC Use is due. The background service will retry until it succeeds."
+                : $"Returns to Primarily AC Use on {state.ExpiresAt.LocalDateTime:ddd d MMM, HH:mm}. You can close the app."
+                : "ExpressCharge to 100% for 24 hours, then return to Primarily AC Use. Works with the app closed.";
+            if (_boostState is not null && ServiceInstaller.Status() != System.ServiceProcess.ServiceControllerStatus.Running)
+                _boostStatus += " Background service is not running. Use Return now or restart the service in Windows.";
+            if (_boostState is null && _state is not null && !_state.ChargeModes.Any(o => o.Value == PowerSettings.ExpressChargeMode))
+                _boostStatus = "ExpressCharge is not available on this BIOS.";
+            else if (_boostState is null && _state is not null && !_state.ChargeModes.Any(o => o.Value == PowerSettings.PrimarilyAcChargeMode))
+                _boostStatus = "Primarily AC Use is not available on this BIOS, so the charging timer cannot be started.";
+        }
+        catch (Exception e) { _boostReadFailed = true; _boostStatus = "Cannot read the charging timer: " + e.Message; }
+        OnPropertyChanged(nameof(BoostStatus));
+        Refresh();
+    }
+
+    public async Task RefreshChargeBoostAsync()
+    {
+        if (IsBusy) return;
+        var previous = _boostState;
+        RefreshBoostStatus();
+        if (previous != _boostState && !_boostReadFailed && _settings is not null)
+            await RefreshOnActivationAsync();
+    }
+
+    public async Task SetChargeBoostAsync(bool start)
+    {
+        if (_settings is null || (start ? !CanStartBoost : !CanReturnFromBoost)) return;
+        IsBusy = true;
+        StatusIsError = false;
+        Status = start ? "Starting 24-hour ExpressCharge…" : "Restoring Primarily AC Use…";
+        try
+        {
+            var settings = _settings;
+            var state = await Task.Run(() =>
+            {
+                var boost = new ChargeBoost(settings, _boostStore);
+                if (start) { ServiceInstaller.EnsureChargeBoostService(); boost.Start(); }
+                else boost.ReturnNow();
+                return settings.Read();
+            });
+            Populate(state);
+            Status = start ? "ExpressCharge enabled for 24 hours." : "Primarily AC Use restored.";
+        }
+        catch (Exception e)
+        {
+            StatusIsError = true;
+            Status = e.Message;
+            try { Populate(await Task.Run(_settings.Read)); }
+            catch { Status += " Re-read BIOS settings before retrying."; }
+        }
+        finally { IsBusy = false; RefreshBoostStatus(); }
+    }
 
     public DeviceInfo Device { get; } = SystemInfo.Device();
 
@@ -146,13 +224,13 @@ public sealed class MainViewModel : Observable
 
     public Task LoadAsync() => RunAsync("Reading BIOS…", () =>
     {
-        _settings ??= new PowerSettings(new BiosClient(BiosClient.DefaultKeyCachePath));
+        _settings ??= new PowerSettings(new BiosClient());
         return _settings.Read();
     }, "Read at");
 
     public async Task ApplyAsync()
     {
-        if (_settings is null || _state is null || !HasChanges) return;
+        if (_settings is null || _state is null || !HasChanges || IsBusy) return;
         var (settings, state, change) = (_settings, _state, Pending());
         _isApplying = true;
         OnPropertyChanged(nameof(ApplyLabel));
@@ -160,16 +238,12 @@ public sealed class MainViewModel : Observable
         {
             await RunAsync("Writing to BIOS…", () =>
             {
-                var current = settings.Read();
-                // Automatic switching may have updated the BIOS while the user edited charging.
-                var desired = change with
-                {
-                    ThermalMode = change.ThermalMode == state.ThermalMode ? current.ThermalMode : change.ThermalMode,
-                    ChargeMode = change.ChargeMode == state.ChargeMode ? current.ChargeMode : change.ChargeMode,
-                    ChargeStart = change.ChargeStart == state.ChargeStart ? current.ChargeStart : change.ChargeStart,
-                    ChargeStop = change.ChargeStop == state.ChargeStop ? current.ChargeStop : change.ChargeStop
-                };
-                return settings.Apply(current, desired);
+                using var operation = settings.EnterOperation();
+                if (_boostStore.Read() is not null && (change.ChargeMode != state.ChargeMode ||
+                    (change.ChargeMode == PowerSettings.CustomChargeMode &&
+                     (change.ChargeStart != state.ChargeStart || change.ChargeStop != state.ChargeStop))))
+                    throw new BiosException("Use Return now to end the ExpressCharge timer before changing charging modes.");
+                return settings.Apply(state, change);
             }, "Verified at");
         }
         finally
@@ -208,14 +282,23 @@ public sealed class MainViewModel : Observable
             IsLoaded = true;
             Status = $"{doneText} {DateTime.Now:HH:mm:ss}";
         }
-        catch (Exception e) when (e is BiosException or ArgumentException)
+        catch (Exception e) when (e is BiosException or ArgumentException or FormatException or OverflowException
+            or System.IO.IOException or UnauthorizedAccessException or System.Security.SecurityException or System.Text.Json.JsonException)
         {
             StatusIsError = true;
             Status = e.Message;
+            // Firmware writes are not a transaction. Show what actually survived a partial failure.
+            if (_isApplying && _settings is not null)
+            {
+                try { Populate(await Task.Run(_settings.Read)); Status += " Current BIOS settings have been re-read."; }
+                catch (Exception readError) when (readError is BiosException or ArgumentException or FormatException or OverflowException)
+                { Status += " Some settings may have changed. Re-read before retrying."; }
+            }
         }
         finally
         {
             IsBusy = false;
+            RefreshBoostStatus();
         }
     }
 
@@ -278,5 +361,9 @@ public sealed class MainViewModel : Observable
         OnPropertyChanged(nameof(HasChanges));
         OnPropertyChanged(nameof(CanApply));
         OnPropertyChanged(nameof(CanRefresh));
+        OnPropertyChanged(nameof(BoostActive));
+        OnPropertyChanged(nameof(CanEditCharging));
+        OnPropertyChanged(nameof(CanStartBoost));
+        OnPropertyChanged(nameof(CanReturnFromBoost));
     }
 }

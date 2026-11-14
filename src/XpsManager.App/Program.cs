@@ -1,6 +1,5 @@
 using System.ServiceProcess;
 using System.Windows;
-using System.IO;
 using XpsManager.Core;
 
 namespace XpsManager.App;
@@ -25,10 +24,9 @@ public static class Program
             }
             catch (Exception e)
             {
-                var folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XpsManager");
-                Directory.CreateDirectory(folder);
-                File.WriteAllText(Path.Combine(folder, "service-operation-error.txt"), e.ToString());
                 Environment.ExitCode = 1;
+                // Do not write elevated diagnostics through a user-controlled path or junction.
+                System.Diagnostics.Trace.TraceError(e.ToString());
             }
             return;
         }

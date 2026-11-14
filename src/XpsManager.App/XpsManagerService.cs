@@ -9,6 +9,7 @@ namespace XpsManager.App;
 public sealed class XpsManagerService : ServiceBase
 {
     AutoSwitcher? _switcher;
+    ChargeBoostMonitor? _chargeBoost;
     readonly List<IntPtr> _notifications = [];
 
     public XpsManagerService()
@@ -33,6 +34,8 @@ public sealed class XpsManagerService : ServiceBase
                 _notifications.Add(handle);
             }
             _switcher.Start();
+            _chargeBoost = new ChargeBoostMonitor(Log);
+            _chargeBoost.Start();
         }
         catch (Exception e) { Log("Service start failed: " + e.Message, true); OnStop(); throw; }
     }
@@ -41,6 +44,7 @@ public sealed class XpsManagerService : ServiceBase
     {
         bool resume = status is PowerBroadcastStatus.ResumeAutomatic or PowerBroadcastStatus.ResumeSuspend or PowerBroadcastStatus.ResumeCritical;
         _switcher?.Signal(resume ? "resumed" : "power setting changed", resume);
+        if (resume) _chargeBoost?.Signal();
         return true;
     }
 
@@ -52,6 +56,7 @@ public sealed class XpsManagerService : ServiceBase
     protected override void OnCustomCommand(int command)
     {
         if (command == 128) _switcher?.Signal("configuration changed", true);
+        if (command == 129) _chargeBoost?.Signal();
     }
 
     protected override void OnStop()
@@ -60,6 +65,8 @@ public sealed class XpsManagerService : ServiceBase
         _notifications.Clear();
         _switcher?.Dispose();
         _switcher = null;
+        _chargeBoost?.Dispose();
+        _chargeBoost = null;
     }
     protected override void OnShutdown() => OnStop();
 

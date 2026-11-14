@@ -18,6 +18,11 @@ public partial class MainWindow : Window
         DataContext = _vm;
         Activity.DataContext = _vm.Live;
         MaxHeight = SystemParameters.WorkArea.Height;
+        MaxWidth = SystemParameters.WorkArea.Width;
+        MinWidth = Math.Min(MinWidth, MaxWidth);
+        MinHeight = Math.Min(MinHeight, MaxHeight);
+        Width = Math.Min(Width, MaxWidth);
+        Height = Math.Min(Height, MaxHeight);
         SourceInitialized += (_, _) => PaintTitleBar();
         Loaded += async (_, _) =>
         {
@@ -25,7 +30,7 @@ public partial class MainWindow : Window
             await _vm.Automatic.LoadAsync();
             if (WindowState != WindowState.Minimized) _serviceStatusTimer.Start();
         };
-        _serviceStatusTimer.Tick += (_, _) => _vm.Automatic.RefreshStatus();
+        _serviceStatusTimer.Tick += async (_, _) => { _vm.Automatic.RefreshStatus(); await _vm.RefreshChargeBoostAsync(); };
         Activated += async (_, _) =>
         {
             if (!_vm.IsLoaded || _vm.IsBusy) return;
@@ -53,10 +58,10 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 await _vm.LoadAsync();
             }
-            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.D1 or Key.D2)
+            else if (Keyboard.Modifiers == ModifierKeys.Control && e.Key is Key.D1 or Key.D2 or Key.D3)
             {
                 e.Handled = true;
-                (e.Key == Key.D1 ? SettingsTab : ActivityTab).IsChecked = true;
+                (e.Key == Key.D1 ? SettingsTab : e.Key == Key.D2 ? AutomaticTab : ActivityTab).IsChecked = true;
             }
         };
     }
@@ -64,6 +69,10 @@ public partial class MainWindow : Window
     async void Refresh_Click(object sender, RoutedEventArgs e) => await _vm.LoadAsync();
 
     async void Apply_Click(object sender, RoutedEventArgs e) => await _vm.ApplyAsync();
+
+    async void ChargeBoost_Click(object sender, RoutedEventArgs e) => await _vm.SetChargeBoostAsync(true);
+
+    async void ReturnCharge_Click(object sender, RoutedEventArgs e) => await _vm.SetChargeBoostAsync(false);
 
     void Revert_Click(object sender, RoutedEventArgs e) => _vm.Revert();
 

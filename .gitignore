@@ -483,5 +483,8 @@ $RECYCLE.BIN/
 
 # XPS Manager
 dist/
+# Human-written release notes are source, not build output.
+!docs/releases/
+!docs/releases/*.md
 # The single-file publish profile is part of the build, not a personal setting.
 !src/XpsManager.App/Properties/PublishProfiles/SingleFile.pubxml

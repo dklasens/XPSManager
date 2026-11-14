@@ -51,9 +51,14 @@ public sealed unsafe class IntelGraphics : IDisposable
             uint domains = 0;
             rc = ctlEnumFrequencyDomains(device, &domains, null);
             if (rc != 0) { OpenError = $"ctlEnumFrequencyDomains 0x{rc:x}"; g.Dispose(); return null; }
-            var handles = stackalloc IntPtr[(int)Math.Min(domains, 8)];
-            domains = Math.Min(domains, 8);
-            ctlEnumFrequencyDomains(device, &domains, handles);
+            uint capacity = Math.Min(domains, 8);
+            var handles = stackalloc IntPtr[(int)capacity];
+            domains = capacity;
+            rc = ctlEnumFrequencyDomains(device, &domains, handles);
+            // Counts are in/out parameters. Never read uninitialised or out-of-bounds
+            // stack handles if the driver fails or the device list changes.
+            if (rc != 0 || domains > capacity)
+            { OpenError = $"ctlEnumFrequencyDomains 0x{rc:x} ({domains})"; g.Dispose(); return null; }
             byte* props = stackalloc byte[32];
             for (int i = 0; i < domains; i++)
             {

@@ -13,6 +13,21 @@ public static class ServiceInstaller
     public const string Name = "XpsManagerService";
     public static string InstallDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "XPS Manager");
     public static string InstalledExe => Path.Combine(InstallDirectory, "XpsManager.exe");
+    public static bool ManagedByInstaller
+    {
+        get
+        {
+            using var machine = Microsoft.Win32.RegistryKey.OpenBaseKey(Microsoft.Win32.RegistryHive.LocalMachine, Microsoft.Win32.RegistryView.Registry64);
+            using var key = machine.OpenSubKey(@"SOFTWARE\XpsManager\Installer");
+            return key?.GetValue("Managed") is int value && value == 1;
+        }
+    }
+
+    static void RequirePortableInstallation()
+    {
+        if (ManagedByInstaller)
+            throw new InvalidOperationException("This copy is managed by Windows Installer. Run the newer MSI to update, or use Windows Settings > Apps > Installed apps to uninstall XPS Manager.");
+    }
 
     public static ServiceControllerStatus? Status()
     {
@@ -21,12 +36,13 @@ public static class ServiceInstaller
         catch (InvalidOperationException e) when (e.InnerException is System.ComponentModel.Win32Exception { NativeErrorCode: 1060 }) { return null; }
     }
 
-    public static bool UpdateAvailable => File.Exists(InstalledExe) &&
+    public static bool UpdateAvailable => !ManagedByInstaller && File.Exists(InstalledExe) &&
         Version.TryParse(FileVersionInfo.GetVersionInfo(InstalledExe).FileVersion, out var installed) &&
         Assembly.GetExecutingAssembly().GetName().Version > installed;
 
     public static void Install(AutoSwitchConfiguration config)
     {
+        RequirePortableInstallation();
         var source = PublishedExe();
         ProtectDirectory();
         if (!File.Exists(InstalledExe) || UpdateAvailable) ReplaceBinary(source);
@@ -35,7 +51,7 @@ public static class ServiceInstaller
             Sc("create", Name, "binPath=", $"\"{InstalledExe}\" --service", "start=", "delayed-auto", "obj=", "LocalSystem", "DisplayName=", "XPS Manager");
         else
             Sc("config", Name, "binPath=", $"\"{InstalledExe}\" --service", "start=", "delayed-auto", "obj=", "LocalSystem");
-        Sc("description", Name, "Follows Windows power mode with Dell BIOS thermal settings. Managed by XPS Manager.");
+        Sc("description", Name, "Follows Windows power mode and restores timed ExpressCharge sessions. Managed by XPS Manager.");
         Sc("failure", Name, "reset=", "86400", "actions=", "restart/5000/restart/30000/restart/30000");
         ProtectService();
         Save(config);
@@ -62,6 +78,7 @@ public static class ServiceInstaller
 
     public static void Update()
     {
+        RequirePortableInstallation();
         var source = PublishedExe();
         ProtectDirectory();
         ProtectService();
@@ -79,11 +96,35 @@ public static class ServiceInstaller
         }
     }
 
+    public static void EnsureChargeBoostService()
+    {
+        if (Status() is null) Install(AutoSwitchStore.Read());
+        if (!File.Exists(InstalledExe) ||
+            !Version.TryParse(FileVersionInfo.GetVersionInfo(InstalledExe).FileVersion, out var version) ||
+            version < new Version(2, 1, 0))
+        {
+            if (ManagedByInstaller)
+                throw new InvalidOperationException("Install XPS Manager 2.1 or newer using the MSI before starting the charging timer.");
+            Update();
+        }
+        using var service = new ServiceController(Name);
+        if (service.Status == ServiceControllerStatus.StopPending)
+            service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(30));
+        if (service.Status == ServiceControllerStatus.Stopped) service.Start();
+        service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(30));
+        // Prove service control works before saving a deadline or touching firmware.
+        service.ExecuteCommand(129);
+    }
+
     public static void Remove()
     {
+        RequirePortableInstallation();
         if (string.Equals(Environment.ProcessPath, InstalledExe, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Open your downloaded copy of XPS Manager to remove the installed service copy.");
         CheckPath();
+        // Do not remove the recovery mechanism while a temporary charging mode is active.
+        if (new ChargeBoostStore().Read() is not null)
+            new ChargeBoost(new PowerSettings(new BiosClient()), new ChargeBoostStore()).ReturnNow();
         if (Status() is not null) { Stop(); Sc("delete", Name); }
         if (EventLog.SourceExists("XPS Manager")) EventLog.DeleteEventSource("XPS Manager");
         AutoSwitchStore.Remove();
@@ -163,7 +204,7 @@ public static class ServiceInstaller
     }
 
     static void ProtectService() => Sc("sdset", Name,
-        // SYSTEM/admins: full control. Interactive users: query/interrogate only, no custom command 128.
+        // SYSTEM/admins: full control. Interactive users: query/interrogate only, no custom commands.
         "D:P(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLORC;;;IU)");
 
     static void Sc(params string[] arguments)

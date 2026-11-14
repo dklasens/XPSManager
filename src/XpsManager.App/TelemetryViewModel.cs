@@ -13,7 +13,8 @@ public sealed class TelemetryViewModel : Observable, IDisposable
     readonly BatteryEstimator _estimator = new();
     TelemetrySampler? _sampler;
     TelemetrySample? _s;
-    bool _reading, _disposed;
+    bool _reading, _disposed, _paused;
+    string? _readError;
 
     public TelemetryViewModel() => _timer.Tick += Tick;
 
@@ -23,6 +24,8 @@ public sealed class TelemetryViewModel : Observable, IDisposable
     // ---- Readout band
 
     public string BatteryPercent => _s?.Power.BatteryPercent is { } p ? $"{p}%" : "—";
+    public string PowerSource => _s is null ? "READING…" : _s.Battery.State == "Charging" ? "CHARGING"
+        : _s.Power.OnAc switch { true => "ON AC", false => "ON BATTERY", _ => "SOURCE UNKNOWN" };
 
     public string SourceLine
     {
@@ -111,7 +114,7 @@ public sealed class TelemetryViewModel : Observable, IDisposable
     public string HealthDetail => _s?.Battery.DesignWh is { } design
         ? $"Full-charge capacity / design capacity ({design:0.0} Wh). Not the current charge."
         : "Design capacity not reported.";
-    public string Note => _s?.Battery.Note ?? "";
+    public string Note => _readError ?? _s?.Battery.Note ?? "";
     public bool HasNote => Note.Length > 0;
 
     // ---- Activity: processor
@@ -149,14 +152,15 @@ public sealed class TelemetryViewModel : Observable, IDisposable
     public async Task StartAsync()
     {
         await RefreshAsync();
-        if (!_disposed) _timer.Start();
+        if (!_disposed && !_paused) _timer.Start();
     }
 
     /// <summary>Stop sampling while minimised; reading counters every second costs battery too.</summary>
-    public void Pause() => _timer.Stop();
+    public void Pause() { _paused = true; _timer.Stop(); }
 
     public void Resume()
     {
+        _paused = false;
         if (_disposed || _timer.IsEnabled) return;
         _timer.Start();
         _ = RefreshAsync();
@@ -166,7 +170,7 @@ public sealed class TelemetryViewModel : Observable, IDisposable
 
     async Task RefreshAsync()
     {
-        if (_reading || _disposed) return;
+        if (_reading || _disposed || _paused) return;
         _reading = true;
         try
         {
@@ -179,7 +183,16 @@ public sealed class TelemetryViewModel : Observable, IDisposable
             var sample = await Task.Run(_sampler.Read);
             if (_disposed) return;
             _s = sample;
+            _readError = null;
             _estimator.Add(sample.At, sample.Battery);
+            OnPropertyChanged(string.Empty);
+        }
+        catch (Exception e) when (e is System.Management.ManagementException or System.Runtime.InteropServices.COMException
+            or UnauthorizedAccessException or System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            if (_disposed) return;
+            _s = null; // Do not display stale measurements as current readings.
+            _readError = "Live readings unavailable. Retrying automatically. " + e.Message;
             OnPropertyChanged(string.Empty);
         }
         finally { _reading = false; }

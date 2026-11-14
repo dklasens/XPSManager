@@ -32,24 +32,34 @@ public static class AutoSwitchStore
 
     public static void Write(AutoSwitchConfiguration config)
     {
-        using var machine = Machine();
-        using var key = machine.CreateSubKey(KeyPath);
-        var acl = new RegistrySecurity();
-        acl.SetAccessRuleProtection(true, false);
-        var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
-        acl.SetOwner(admins);
-        foreach (var sid in new[] { admins, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
-            acl.AddAccessRule(new RegistryAccessRule(sid, RegistryRights.FullControl, InheritanceFlags.ContainerInherit,
-                PropagationFlags.None, AccessControlType.Allow));
-        acl.AddAccessRule(new RegistryAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null), RegistryRights.ReadKey,
-            InheritanceFlags.ContainerInherit, PropagationFlags.None, AccessControlType.Allow));
-        key.SetAccessControl(acl);
+        using var key = OpenWritableKey();
         // Legacy readers see disabled while the diagnostic mirrors are replaced.
         key.SetValue("Enabled", 0);
         foreach (var mode in AutoSwitchConfiguration.Default.Mapping.Keys)
             key.SetValue("Map." + mode, config.Mapping.GetValueOrDefault(mode) ?? "", RegistryValueKind.String);
         key.SetValue("Enabled", config.Enabled ? 1 : 0);
         key.SetValue("Configuration", JsonSerializer.Serialize(config), RegistryValueKind.String);
+    }
+
+    internal static RegistryKey OpenWritableKey()
+    {
+        using var machine = Machine();
+        var key = machine.CreateSubKey(KeyPath);
+        try
+        {
+            var acl = new RegistrySecurity();
+            acl.SetAccessRuleProtection(true, false);
+            var admins = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+            acl.SetOwner(admins);
+            foreach (var sid in new[] { admins, new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null) })
+                acl.AddAccessRule(new RegistryAccessRule(sid, RegistryRights.FullControl, InheritanceFlags.ContainerInherit,
+                    PropagationFlags.None, AccessControlType.Allow));
+            acl.AddAccessRule(new RegistryAccessRule(new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, null), RegistryRights.ReadKey,
+                InheritanceFlags.ContainerInherit, PropagationFlags.None, AccessControlType.Allow));
+            key.SetAccessControl(acl);
+            return key;
+        }
+        catch { key.Dispose(); throw; }
     }
 
     public static AutoSwitchStatus Status()

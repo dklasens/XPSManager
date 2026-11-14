@@ -11,7 +11,7 @@ internal static class ServiceChecks
     public static void Run(string publishedExe)
     {
         var saved = AutoSwitchStore.Read();
-        var power = new PowerSettings(new BiosClient(BiosClient.DefaultKeyCachePath));
+        var power = new PowerSettings(new BiosClient());
         var original = power.ReadThermal().CurrentValue;
         try
         {

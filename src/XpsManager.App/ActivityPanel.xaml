@@ -66,7 +66,10 @@
             </StackPanel>
         </Grid>
 
-        <local:Fact Label="Battery PPID" Value="{Binding BatteryPpid}" Margin="0,16,0,0"
+        <Border Background="{StaticResource Rule}" Height="1" Margin="0,20,0,12" />
+        <local:Fact Label="Windows power mode" Value="{Binding WindowsMode}" />
+        <local:Fact Label="Display" Value="{Binding Display}" Detail="{Binding DisplayDetail}" />
+        <local:Fact Label="Battery PPID" Value="{Binding BatteryPpid}" Margin="0,4,0,0"
                     Detail="Dell component identifier from the firmware battery record. Unavailable when the source is missing or ambiguous." />
 
         <TextBlock Text="{Binding Note}" Style="{StaticResource Description}" Margin="0,12,0,0"

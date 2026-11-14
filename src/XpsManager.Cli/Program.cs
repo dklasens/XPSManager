@@ -34,7 +34,7 @@ try
         return 0;
     }
     var sw = Stopwatch.StartNew();
-    var power = new PowerSettings(new BiosClient(BiosClient.DefaultKeyCachePath));
+    var power = new PowerSettings(new BiosClient());
     var state = power.Read();
     Console.WriteLine($"# read in {sw.ElapsedMilliseconds} ms");
 

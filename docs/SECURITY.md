@@ -1,5 +1,23 @@
 # Security and performance review
 
+## v2.1.0 charging timer
+
+The charging timer adds a 30-second registry deadline check to the service, independent of thermal switching. It accesses the BIOS only when a saved deadline is due, on explicit start, or on early return. Resume and service startup also check the deadline. Earlier idle measurements below predate this feature.
+
+The deadline and last error are stored atomically in the existing admin/SYSTEM-writable HKLM key. Recovery intent is flushed before enabling ExpressCharge; the timer is cleared only after Primarily AC Use verifies. All transitions use the same BIOS mutex as the app, CLI and thermal service. Failures retain the deadline and are retried. This service path can change only the charging-mode attribute, with fresh capability validation and read-back; it does not write thermal settings or custom thresholds. The start action checks for a running service with a compatible installed version before changing firmware.
+
+Deterministic fake-clock/firmware checks cover expiry, recovery after recreation, cancellation, unsupported/read-only modes and storage/write failures. Live 24-hour, reboot and sleep/wake validation of this feature remains outstanding.
+
+## v2.0.1 candidate delta
+
+The measurements and installed-service tests below belong to the earlier v2 build. They are historical evidence, not a fresh measurement of the v2.0.1 MSI. Current release gates and verification limits are tracked in [RELEASE-READINESS.md](RELEASE-READINESS.md).
+
+The candidate removes privileged file writes under LocalAppData, caches firmware keys only in memory, coordinates app/CLI/service BIOS operations with an administrator/SYSTEM-only global mutex, enforces read-only attributes and checks native frequency-domain counts before reading handles. The MSI bundles its runtime in protected Program Files, installs a restricted service and HKLM configuration key, and leaves automatic switching off when no prior configuration exists. MSI repair/update preserves settings; uninstall retains settings for reinstall. Portable service-management commands refuse MSI-owned installations.
+
+The new MSI uses automatic startup and two 30-second recovery attempts, rather than the portable service's delayed startup and continuing recovery. It is unsigned by the owner's decision. NuGet auditing covers known advisory data, and a clean result does not cover all runtime/driver/firmware risks. The bundled runtime requires new application releases for security updates. See the candidate checklist before describing it as ready for public release.
+
+## Earlier v2 evidence
+
 Reviewed 2026-11-12 against the v2 source and the installed XPS 14 service. This is a source/configuration review with targeted runtime checks, not an independent penetration test or a guarantee of zero risk.
 
 ## Background activity

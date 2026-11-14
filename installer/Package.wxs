@@ -1,0 +1,78 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="XPS Manager" Manufacturer="David Klasens" Version="$(ProductVersion)"
+           UpgradeCode="55719E3D-887E-457B-BDEA-A71400F4C35B" Scope="perMachine" InstallerVersion="500">
+    <MajorUpgrade Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="A newer version of XPS Manager is already installed." />
+    <Upgrade Id="55719E3D-887E-457B-BDEA-A71400F4C35B">
+      <UpgradeVersion Minimum="$(ProductVersion)" Maximum="$(ProductVersion)" IncludeMinimum="yes" IncludeMaximum="yes"
+                      OnlyDetect="yes" Property="SAMEVERSIONFOUND" />
+    </Upgrade>
+    <Launch Condition="Installed OR NOT SAMEVERSIONFOUND"
+            Message="This version is already installed. Use the original MSI to repair, or uninstall it before installing a different build of the same version." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.exe" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/dklasens/XPSManager" />
+    <Icon Id="AppIcon.exe" SourceFile="$(PayloadDirectory)\XpsManager.exe" />
+    <Property Id="WINDOWSBUILD">
+      <RegistrySearch Id="WindowsBuild" Root="HKLM" Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+                      Name="CurrentBuildNumber" Type="raw" Bitness="always64" />
+    </Property>
+    <Launch Condition="Installed OR (WINDOWSBUILD &gt;= 22000)" Message="XPS Manager requires Windows 11 (x64)." />
+    <!-- Portable v2 installs have no MSI ownership/rollback record. Do not adopt one silently. -->
+    <Property Id="EXISTINGSERVICE">
+      <RegistrySearch Id="ExistingService" Root="HKLM" Key="SYSTEM\CurrentControlSet\Services\XpsManagerService"
+                      Name="ImagePath" Type="raw" Bitness="always64" />
+    </Property>
+    <Property Id="MSIMANAGED">
+      <RegistrySearch Id="MsiManaged" Root="HKLM" Key="SOFTWARE\XpsManager\Installer"
+                      Name="Managed" Type="raw" Bitness="always64" />
+    </Property>
+    <Launch Condition="Installed OR NOT EXISTINGSERVICE OR MSIMANAGED"
+            Message="Remove the old portable background service from XPS Manager before installing this package. Record your automatic mappings first." />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="XPS Manager">
+        <Component Id="AppService" Guid="F6AE98D2-BD8E-435D-B2D5-3B28E071721B" Bitness="always64">
+          <File Id="AppExe" Source="$(PayloadDirectory)\XpsManager.exe" KeyPath="yes">
+            <Shortcut Id="StartMenuApp" Directory="ProgramMenuFolder" Name="XPS Manager"
+                      Advertise="yes" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon.exe" />
+          </File>
+          <ServiceInstall Id="InstallService" Name="XpsManagerService" DisplayName="XPS Manager"
+                          Description="Follows Windows power mode and restores timed ExpressCharge sessions when enabled in XPS Manager."
+                          Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem"
+                          Arguments="--service" Vital="yes">
+            <PermissionEx Sddl="D:P(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWLORC;;;IU)" />
+            <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart"
+                                ThirdFailureActionType="none" RestartServiceDelayInSeconds="30" ResetPeriodInDays="1" />
+          </ServiceInstall>
+          <ServiceControl Id="ControlService" Name="XpsManagerService" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+        </Component>
+        <Component Id="InstallFolderAcl" Guid="13741E94-4404-4BC9-9279-21D243648D43" Bitness="always64">
+          <CreateFolder>
+            <PermissionEx Sddl="O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;GRGX;;;BU)" />
+          </CreateFolder>
+        </Component>
+        <Component Id="InstallerOwnership" Guid="69EDB741-880E-4C77-A42D-C9CB4ED566EC" Bitness="always64">
+          <RegistryValue Root="HKLM" Key="SOFTWARE\XpsManager\Installer" Name="Managed" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+        <Component Id="SettingsAcl" Guid="40C18BFD-3BAC-41D1-B252-5101AA617EAF" Bitness="always64">
+          <RegistryValue Root="HKLM" Key="SOFTWARE\XpsManager\AutoSwitch" Name="StorageVersion" Value="1" Type="integer" KeyPath="yes">
+            <PermissionEx Sddl="O:BAD:P(A;CI;KA;;;SY)(A;CI;KA;;;BA)(A;CI;KR;;;BU)" />
+          </RegistryValue>
+        </Component>
+        <Component Id="EventMessages" Guid="5D5B0F99-6D11-4AE8-B1CF-03C8A66BC694" Bitness="always64">
+          <File Id="EventMessageDll" Source="$(PayloadDirectory)\System.Diagnostics.EventLog.Messages.dll" KeyPath="yes" />
+          <util:EventSource Name="XPS Manager" Log="Application" EventMessageFile="[#EventMessageDll]"
+                            SupportsErrors="yes" SupportsInformationals="yes" SupportsWarnings="yes" />
+        </Component>
+        <!-- Settings are deliberately not MSI-owned values: upgrades/repairs must not reset them.
+             Empty/missing configuration is disabled. Retain settings on uninstall for reinstall. -->
+        <Files Include="$(PayloadDirectory)\**">
+          <Exclude Files="$(PayloadDirectory)\XpsManager.exe" />
+          <Exclude Files="$(PayloadDirectory)\System.Diagnostics.EventLog.Messages.dll" />
+          <Exclude Files="$(PayloadDirectory)\**.pdb" />
+        </Files>
+      </Directory>
+    </StandardDirectory>
+  </Package>
+</Wix>

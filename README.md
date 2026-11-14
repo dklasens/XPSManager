@@ -1,103 +1,84 @@
-# XPS Manager v2
+# XPS Manager
 
-A small Windows app for the **Dell XPS 14 (DA14260)** that lets you change the laptop's power and battery settings from Windows, and see what the laptop is doing right now. You don't need to restart into the BIOS or install Dell's larger utilities.
+Take control of your Dell XPS laptop's charging, cooling and performance from one small Windows app.
 
-Open it, change a setting, close it. In v2, optional automatic thermal switching keeps working in the background.
+Built for the **Dell XPS 14 (DA14260)** on **Windows 11, 64-bit**. Other Dell models have not been verified.
 
-## New in v2
+**[Download the latest release](https://github.com/dklasens/XPSManager/releases/latest)** · [What's new in v2.1.0](docs/releases/v2.1.0.md)
 
-- Follow Windows power mode automatically, with editable thermal mappings and manual overrides.
-- Keep switching after closing the app through an optional Windows service with automatic startup and crash recovery.
-- View battery serial and firmware-reported PPID in Activity.
-- Manage service installation, updates and removal from Settings, with protected configuration and restricted service permissions.
+## What can it do?
 
-## What it does
+- **Choose how your laptop runs:** Optimized, Cool, Quiet or Ultra Performance, depending on what your BIOS supports.
+- **Manage battery charging:** choose a charging mode or set your own start and stop percentages.
+- **Get ready for a day out:** enable ExpressCharge for 24 hours, then automatically return to Primarily AC Use.
+- **Follow Windows power mode:** automatically match your cooling/performance profile to your Windows settings, even with the app closed.
+- **See live readings:** battery power and health, CPU and graphics activity, clocks and more. Available readings depend on your hardware.
 
-**Change settings**
-- **Thermal mode:** Optimized, Cool, Quiet or Ultra Performance. This sets how hard the laptop is allowed to run and how loud the fans may get.
-- **Automatic thermal switching:** follow Windows power mode, with editable mappings and a background Windows service.
-- **Battery charging:** Adaptive, Standard, Express, Primarily AC, or Custom. Custom sets your own start and stop percentages; for example, stopping at 80% helps the battery last longer.
+## Install
 
-**See what's happening**, updated every second:
-- Battery level and how long it will last at the current rate of use
-- How much power the battery, the processor and the graphics are using
-- Processor and graphics speeds, and whether they're being held back by heat or power limits
-- The Windows power mode, the screen's refresh rate and brightness
-- Battery health, charge cycles, serial number and firmware-reported PPID (when available)
+1. Open the [latest release](https://github.com/dklasens/XPSManager/releases/latest).
+2. Download **XpsManager-2.1.0-win-x64.zip** and extract it. Use the ZIP with this name, rather than GitHub's **Source code** downloads.
+3. Run the **.msi** installer inside and approve the Windows administrator prompt.
+4. Open **XPS Manager** from Start.
 
-The **Activity** tab has the full breakdown. The **Settings** tab is what opens by default.
+The installer includes the required .NET runtime and background service. You do not need to install .NET separately. A standalone MSI is also available on the release page.
 
-## How it works
+The app is currently **unsigned**, so Windows may show an unknown-publisher or SmartScreen warning. Download it from this repository's Releases page. The release also includes SHA-256 checksums for verifying downloaded files.
 
-Dell builds a settings interface into the laptop's firmware (the BIOS) that Windows programs can talk to. XPS Manager uses it to read your current settings and write the ones you choose. After each change it reads the setting back to make sure it took effect. These are the same settings you'd find by restarting into the BIOS setup screen.
+**Upgrading from a portable copy?** First note your automatic settings and use **Automatic → Remove background service** in your downloaded copy. Then install the MSI and restore your settings. The installer will not take over an existing portable service.
 
-The live readings come from sources already in Windows: the battery, Windows performance counters, and Intel's graphics driver. Reading them never changes anything.
+## Everyday use
 
-Because it changes BIOS settings, the app needs administrator access. Windows asks once when it opens.
+### Settings
 
-## Download
+Choose your thermal and charging options, then select **Write to BIOS** to apply them. **Discard** cancels unsaved edits; **Re-read** reloads the laptop's current settings. The app checks each change by reading it back from the BIOS.
 
-Get **XpsManager.exe** (or the .zip with documentation) from the [latest release](https://github.com/dklasens/XPSManager/releases/latest).
+### A full charge for a day out
 
-- Needs Windows 11 and the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0).
-- The app isn't code-signed, so Windows may show a SmartScreen warning the first time. Choose **More info**, then **Run anyway**.
+Under **Settings → Battery charging**, press **ExpressCharge for 24 hours**. This enables fast charging to 100% and shows when **Primarily AC Use** will return. Press **Return now** to end early.
 
-## Getting started
+You can close the app: the background service keeps the timer. If the laptop is asleep or switched off when time runs out, it restores the charging mode after Windows resumes or starts. Apply or discard any pending edits before starting the timer.
 
-1. Download and open **XpsManager.exe**. Approve the Windows administrator prompt.
-2. Use the thermal and charging controls, then choose **Write to BIOS** for manual changes.
-3. For automatic switching, turn off Dell Optimizer's thermal / Windows power-mode sync, then enable **Settings → Automatic → Follow Windows power mode**.
-4. Set Windows to **Best power efficiency** on battery and **Best performance** while plugged in if you want Quiet on battery and Ultra Performance on AC.
+Primarily AC Use follows Dell's battery-preservation policy. Returning to it does not drain a battery that is already fully charged. Both charging modes must be supported by your BIOS.
 
-Enabling automatic mode handles service installation and startup. **No login task, startup shortcut or open app window is needed.** The service is configured for delayed automatic startup with Windows, including before logon. Leaving automatic mode off installs no service.
+### Automatic
 
-## Automatic mode
+Turn on **Follow Windows power mode** to use these defaults, or choose your own:
 
-In **Settings → Automatic**, enable **Follow Windows power mode**. The published exe installs a protected copy at `C:\Program Files\XPS Manager\XpsManager.exe` and registers `XpsManagerService`, running as LocalSystem with delayed automatic startup and crash recovery. It works with the app closed and before logon. The app still asks for administrator access.
-
-| Windows mode | Default thermal mode |
+| Windows power mode | Laptop thermal mode |
 |---|---|
-| Energy saver / Best power efficiency | Quiet |
-| Balanced / legacy Better performance | Optimized |
+| Best power efficiency / Energy saver | Quiet |
+| Balanced | Optimized |
 | Best performance | Ultra Performance |
-| Custom / unavailable | No change |
 
-Edit the three mapping rows and choose **Save automatic settings**. Energy saver shares the efficiency row; Better performance shares Balanced. **No change** leaves the BIOS alone. Windows keeps separate power modes for battery and AC: choose Best power efficiency on battery and Best performance while plugged in to get Quiet / Ultra Performance switching.
+This option is off on a fresh installation. If you use Dell Optimizer, turn off its thermal/power-mode synchronisation before enabling this feature so the two apps do not compete. Automatic thermal switching and the ExpressCharge timer work independently.
 
-Changes are one-way: XPS Manager never changes the Windows power mode. Notifications settle for two seconds before the service reads, compares and writes the thermal setting. A manual thermal choice lasts until the next real mode/source change, resume, service restart or saved configuration; transient game-mode notifications do not cancel it. There is no periodic BIOS write timer.
+### Activity
 
-**Turn off Dell Optimizer's thermal / Windows power-mode synchronization before enabling this feature.** Its reverse sync can conflict with XPS Manager. Dolby Vision remains in Dolby Vision Access. Firmware Adaptive charging is available; Dell's learned Dynamic Charge is not reproduced.
+View live battery, CPU and graphics readings. Monitoring pauses when the window is minimised. CPU temperatures and fan speeds are not currently available.
 
-Turning the switch off leaves the service installed and idle. **Remove background service** stops and removes the service, installed executable, event source and configuration. Use your downloaded copy for removal, rather than opening the exe inside Program Files. When a newer downloaded exe is opened, **Update installed service** appears in Automatic.
+## Update or uninstall
 
-Settings and last-result status live under `HKLM\SOFTWARE\XpsManager\AutoSwitch`, writable only by administrators and SYSTEM. Application events use the **XPS Manager** source. If installation or a BIOS operation fails, the Automatic status explains it; save again to retry.
+Run a newer MSI to update; your automatic settings are kept. To remove the app, use **Windows Settings → Apps → Installed apps → XPS Manager**.
 
-Elevated CLI: `xpsm auto status`, `xpsm auto on`, `xpsm auto off`. Install first through the published app. For deployment, the published app also accepts `--install-service`, `--update-service` and `--remove-service`; exit code 1 indicates failure, with details in `%LOCALAPPDATA%\XpsManager\service-operation-error.txt`.
+If an ExpressCharge timer is active, select **Return now** before uninstalling: removing the service also removes its ability to restore the charging mode. Uninstalling keeps saved automatic settings for a future reinstall and leaves the current BIOS settings in place.
 
-## Performance and security
+## Compatibility and help
 
-The service responds to Windows power notifications; it does not continuously poll the BIOS. A notification schedules one check after a two-second settling period. It only writes when a supported thermal value differs from the current setting. There is no network telemetry or remote-control interface.
+XPS Manager requires administrator access to Dell's BIOS settings. It has been developed and tested on an XPS 14 DA14260, BIOS 1.11.0, without a BIOS administrator password. It does not flash the BIOS or change Windows power modes.
 
-While the app is visible, live readings refresh every second and service status every three seconds. Both pause when minimised and stop when the app closes. The service runs independently. Measured idle service use, access-control checks and limitations are documented in the [security review](docs/SECURITY.md); this is not a guarantee of zero overhead or zero security risk.
-
-## Hardware support and validation
-
-- It's built and tested on the XPS 14 DA14260 (BIOS 1.11.0). Other Dell laptops may work if their BIOS offers the same settings, but they haven't been tested.
-- It assumes no BIOS administrator password is set.
-- Temperatures and fan speed aren't shown: this laptop doesn't report them to Windows.
-
-Verified on the target laptop: AC/battery switching, a Windows power-mode change, manual override, disable/re-enable, invalid mappings, service crash recovery, removal/reinstallation/update, and battery identity reads. **Energy saver on/off, rapid replug, sleep/wake, reboot startup and the newer-version update offer still need their remaining hardware checks.** See the [v2 validation record](docs/V2-VALIDATION.md).
+Automated checks cover the charging timer and installer lifecycle. A live 24-hour charging cycle and some sleep/restart scenarios remain unverified; see the [validation notes](docs/RELEASE-READINESS.md). For problems, [open an issue](https://github.com/dklasens/XPSManager/issues) with your laptop model, BIOS version, app version and error message. Please omit serial numbers and other personal details.
 
 ## For developers
 
-Security boundaries, polling intervals and measured idle resource use: [docs/SECURITY.md](docs/SECURITY.md).
-
-Build, project layout, and how each reading is measured: see [docs/TECHNICAL.md](docs/TECHNICAL.md).
+Use the .NET SDK specified in `global.json` on Windows:
 
 ```powershell
-dotnet build
-dotnet run --project tools/TelemetryChecks   # checks
-dotnet publish src/XpsManager.App -p:PublishProfile=SingleFile   # dist\XpsManager.exe
+dotnet build -c Release
+dotnet run --project tools/TelemetryChecks -c Release
+./tools/Build-Installer.ps1
 ```
 
-Releases are built by GitHub Actions: pushing a tag such as `v2.0.0` runs the hardware-independent checks, publishes the single exe, packages the documentation, and attaches SHA-256 checksums to the release. The CLI is available from source with `dotnet build src/XpsManager.Cli`; it is not a separate release download.
+GitHub Actions builds and tests each change. A matching version tag, such as `v2.1.0`, publishes the MSI, an MSI ZIP and checksums after the checks pass.
+
+More detail: [technical notes and CLI](docs/TECHNICAL.md) · [security notes](docs/SECURITY.md) · [validation record](docs/RELEASE-READINESS.md).

@@ -1,5 +1,7 @@
 # XPS Manager v2 validation
 
+This is the historical v2.0.0 validation record. The v2.0.1 MSI and changed BIOS coordination require their own regression and installer checks; see [release readiness](RELEASE-READINESS.md). Do not treat the earlier results below as validation of the new installer.
+
 Validation date: 2026-11-12. Hardware: Dell XPS 14 DA14260. The user confirmed Dell Optimizer thermal synchronization was disabled before live checks.
 
 ## Evidence collected

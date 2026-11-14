@@ -22,22 +22,50 @@ public sealed record PowerState(
 
 public sealed record PowerChange(string ThermalMode, string ChargeMode, int ChargeStart, int ChargeStop);
 
-public sealed class PowerSettings(BiosClient bios)
+public sealed class PowerSettings(IBiosClient bios)
 {
     public const string ThermalAttr = "ThermalManagement";
     public const string ChargeModeAttr = "PrimaryBattChargeCfg";
     public const string ChargeStartAttr = "CustomChargeStart";
     public const string ChargeStopAttr = "CustomChargeStop";
     public const string CustomChargeMode = "Custom";
+    public const string ExpressChargeMode = "Express";
+    public const string PrimarilyAcChargeMode = "PrimAcUse";
+
+    public BiosAttribute ReadChargeMode()
+    {
+        using var operation = EnterOperation();
+        return Require(bios.ReadAttributes([ChargeModeAttr]), ChargeModeAttr);
+    }
+
+    /// <summary>Changes only charging policy, preserving thermal mode and custom thresholds.</summary>
+    public void SetChargeMode(string value)
+    {
+        using var operation = EnterOperation();
+        var current = ReadChargeMode();
+        if (current.CurrentValue == value) return;
+        if (current.IsReadOnly || !current.PossibleValues.Contains(value, StringComparer.Ordinal))
+            throw new BiosException($"Charge mode '{value}' is not writable on this BIOS.");
+        bios.SetAttribute(ChargeModeAttr, value);
+        if (ReadChargeMode().CurrentValue != value)
+            throw new BiosException("Charge mode did not verify after writing.");
+    }
 
     /// <summary>Dell requires the stop threshold to be at least this far above the start.</summary>
     public const int MinChargeGap = 5;
 
-    public BiosAttribute ReadThermal() => Require(bios.ReadAttributes([ThermalAttr]), ThermalAttr);
+    public IDisposable EnterOperation() => bios.EnterOperation();
+
+    public BiosAttribute ReadThermal()
+    {
+        using var operation = EnterOperation();
+        return Require(bios.ReadAttributes([ThermalAttr]), ThermalAttr);
+    }
 
     /// <summary>Service boundary: can write only the thermal attribute, after fresh validation.</summary>
     public void SetThermal(string value)
     {
+        using var operation = EnterOperation();
         var current = ReadThermal();
         if (current.IsReadOnly || !current.PossibleValues.Contains(value, StringComparer.Ordinal))
             throw new BiosException($"Thermal mode '{value}' is not writable on this BIOS.");
@@ -66,6 +94,7 @@ public sealed class PowerSettings(BiosClient bios)
 
     public PowerState Read()
     {
+        using var operation = EnterOperation();
         var attrs = bios.ReadAttributes([ThermalAttr, ChargeModeAttr, ChargeStartAttr, ChargeStopAttr]);
         var thermal = Require(attrs, ThermalAttr);
         var charge = Require(attrs, ChargeModeAttr);
@@ -79,13 +108,24 @@ public sealed class PowerSettings(BiosClient bios)
             ChargeStop: int.Parse(stop.CurrentValue),
             ThermalModes: OptionsFor(thermal, KnownThermalModes),
             ChargeModes: OptionsFor(charge, KnownChargeModes),
-            ChargeStartRange: (start.Min ?? 0, start.Max ?? 100),
-            ChargeStopRange: (stop.Min ?? 0, stop.Max ?? 100));
+            ChargeStartRange: start.IsReadOnly ? (int.Parse(start.CurrentValue), int.Parse(start.CurrentValue)) : (start.Min ?? 0, start.Max ?? 100),
+            ChargeStopRange: stop.IsReadOnly ? (int.Parse(stop.CurrentValue), int.Parse(stop.CurrentValue)) : (stop.Min ?? 0, stop.Max ?? 100));
     }
 
     /// <summary>Writes only what differs from <paramref name="current"/>, then re-reads and verifies.</summary>
     public PowerState Apply(PowerState current, PowerChange desired)
     {
+        using var operation = EnterOperation();
+        var fresh = Read();
+        // Preserve fields the caller did not edit, even if another process changed them.
+        desired = desired with
+        {
+            ThermalMode = desired.ThermalMode == current.ThermalMode ? fresh.ThermalMode : desired.ThermalMode,
+            ChargeMode = desired.ChargeMode == current.ChargeMode ? fresh.ChargeMode : desired.ChargeMode,
+            ChargeStart = desired.ChargeStart == current.ChargeStart ? fresh.ChargeStart : desired.ChargeStart,
+            ChargeStop = desired.ChargeStop == current.ChargeStop ? fresh.ChargeStop : desired.ChargeStop
+        };
+        current = fresh;
         Validate(current, desired);
 
         if (desired.ThermalMode != current.ThermalMode)
@@ -122,9 +162,9 @@ public sealed class PowerSettings(BiosClient bios)
 
     static void Validate(PowerState current, PowerChange desired)
     {
-        if (current.ThermalModes.All(o => o.Value != desired.ThermalMode))
+        if (current.ThermalMode != desired.ThermalMode && current.ThermalModes.All(o => o.Value != desired.ThermalMode))
             throw new ArgumentException($"Unsupported thermal mode '{desired.ThermalMode}'.");
-        if (current.ChargeModes.All(o => o.Value != desired.ChargeMode))
+        if (current.ChargeMode != desired.ChargeMode && current.ChargeModes.All(o => o.Value != desired.ChargeMode))
             throw new ArgumentException($"Unsupported charge mode '{desired.ChargeMode}'.");
         if (desired.ChargeMode != CustomChargeMode)
             return;
@@ -144,7 +184,7 @@ public sealed class PowerSettings(BiosClient bios)
 
     // Show only what this BIOS offers; fall back to the raw value for anything unrecognised.
     static IReadOnlyList<SettingOption> OptionsFor(BiosAttribute attr, SettingOption[] known) =>
-        attr.PossibleValues
+        (attr.IsReadOnly ? new[] { attr.CurrentValue } : attr.PossibleValues)
             .Select(v => known.FirstOrDefault(k => k.Value == v) ?? new SettingOption(v, v, ""))
             .ToList();
 }

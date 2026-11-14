@@ -1,0 +1,14 @@
+<Project Sdk="WixToolset.Sdk/7.0.1">
+  <PropertyGroup>
+    <!-- Owner accepted the WiX 7 OSMF terms for this project on 2026-11-12. -->
+    <AcceptEula>wix7</AcceptEula>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>XpsManager-$(Version)-win-x64</OutputName>
+    <PayloadDirectory>$(MSBuildThisFileDirectory)..\artifacts\installer-payload</PayloadDirectory>
+    <DefineConstants>ProductVersion=$(Version);PayloadDirectory=$(PayloadDirectory)</DefineConstants>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Util.wixext" Version="7.0.1" />
+  </ItemGroup>
+</Project>

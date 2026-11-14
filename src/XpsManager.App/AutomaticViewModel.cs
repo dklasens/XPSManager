@@ -15,13 +15,15 @@ public sealed class MappingRow(string label, string hint, WindowsPowerMode mode,
 
 public sealed class AutomaticViewModel : Observable
 {
-    bool _enabled, _busy, _installed, _error, _optimizer, _update;
+    bool _enabled, _busy, _installed, _error, _optimizer, _update, _managedByInstaller;
     bool _operationFailed;
     string _status = "Checking background service…";
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
     public bool IsBusy { get => _busy; private set { Set(ref _busy, value); OnPropertyChanged(nameof(CanEdit)); } }
-    public bool CanEdit => !IsBusy;
+    public bool CanEdit => !IsBusy && Rows.Count == 3;
     public bool Installed { get => _installed; private set => Set(ref _installed, value); }
+    public bool CanRemoveService => Installed && !ManagedByInstaller;
+    public bool ManagedByInstaller { get => _managedByInstaller; private set => Set(ref _managedByInstaller, value); }
     public bool StatusIsError { get => _error; private set => Set(ref _error, value); }
     public bool OptimizerInstalled { get => _optimizer; private set => Set(ref _optimizer, value); }
     public bool UpdateAvailable { get => _update; private set => Set(ref _update, value); }
@@ -42,7 +44,14 @@ public sealed class AutomaticViewModel : Observable
 
     void ReadState()
     {
-        var config = AutoSwitchStore.Read();
+        AutoSwitchConfiguration config;
+        string? configError = null;
+        try { config = AutoSwitchStore.Read(); }
+        catch (Exception e) when (e is System.Text.Json.JsonException or System.IO.InvalidDataException)
+        {
+            config = AutoSwitchConfiguration.Default;
+            configError = "Automatic settings could not be read. Default mappings are shown with automatic mode off. Save mappings to replace the damaged settings.";
+        }
         OptimizerInstalled = AutoSwitchStore.DellOptimizerInstalled();
         Enabled = config.Enabled;
         Rows.Clear();
@@ -55,6 +64,8 @@ public sealed class AutomaticViewModel : Observable
             else if (row.Selected == "Performance" && !Options.Any(o => o.Value == row.Selected) && Options.Any(o => o.Value == "UltraPerformance")) row.Selected = "UltraPerformance";
         }
         RefreshStatus();
+        OnPropertyChanged(nameof(CanEdit));
+        if (configError is not null) { StatusIsError = true; Status = configError; _operationFailed = true; }
     }
 
     public void RefreshStatus()
@@ -64,12 +75,15 @@ public sealed class AutomaticViewModel : Observable
         {
             var service = ServiceInstaller.Status();
             Installed = service is not null;
+            ManagedByInstaller = ServiceInstaller.ManagedByInstaller;
+            OnPropertyChanged(nameof(CanRemoveService));
+            OnPropertyChanged(nameof(ManagedByInstaller));
             UpdateAvailable = Installed && ServiceInstaller.UpdateAvailable;
             var config = AutoSwitchStore.Read();
             var last = AutoSwitchStore.Status();
             StatusIsError = last.Error.Length > 0 || (config.Enabled && service != ServiceControllerStatus.Running);
             Status = service is null ? "Off. Enable to install the background service."
-                : !config.Enabled ? "Off. Background service installed; automatic switching is idle."
+                : !config.Enabled ? "Thermal switching off. The background service also handles saved charging timers."
                 : service != ServiceControllerStatus.Running ? $"Enabled, but service is {service}. Save automatic settings to start it."
                 : last.Error.Length > 0 ? "On. " + last.Error
                 : last.AppliedAt is { } at ? $"On. Last set {(last.Mode is "Performance" or "UltraPerformance" ? "Ultra Performance" : last.Mode)} at {at.LocalDateTime:HH:mm} ({last.Trigger})."

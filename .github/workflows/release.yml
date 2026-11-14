@@ -1,78 +1,100 @@
-name: Release
+name: Build and release
 
-# Push a tag like v2.0.0 to build, check and publish a GitHub release with
-# XpsManager.exe and a .zip. Can also be run by hand for an existing tag.
 on:
   push:
+    branches: [main]
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Tag to release (e.g. v2.0.0)
-        required: true
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: windows-latest
-    env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  build-and-test:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          ref: ${{ env.TAG }}
-
-      - uses: actions/setup-dotnet@v4
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
-          dotnet-version: 10.0.x
-
-      - name: Work out version
+          global-json-file: global.json
+      - name: Validate release version
+        id: version
         shell: pwsh
         run: |
-          $v = $env:TAG.TrimStart('v')
-          if ($v -notmatch '^\d+\.\d+(\.\d+)?$') { throw "Tag '$env:TAG' isn't a version like v2.0.0" }
-          if ($v -match '^\d+\.\d+$') { $v = "$v.0" }
-          "VERSION=$v" >> $env:GITHUB_ENV
-
-      - name: Run checks
-        run: dotnet run --project tools/TelemetryChecks -c Release
-
-      - name: Publish single exe
-        run: dotnet publish src/XpsManager.App -p:PublishProfile=SingleFile -p:Version=${{ env.VERSION }}
-
-      - name: Package
-        shell: pwsh
+          $version = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup.Version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must have three numeric parts.' }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw 'Tag and Directory.Build.props version must agree.'
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Restore and audit dependencies
         run: |
-          $zip = "XpsManager-$env:TAG-win-x64.zip"
-          Compress-Archive -Path dist/XpsManager.exe, README.md, docs -DestinationPath $zip
-          "ZIP=$zip" >> $env:GITHUB_ENV
-          @('dist/XpsManager.exe', $zip) | ForEach-Object {
-            $hash = (Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $(Split-Path -Leaf $_)"
-          } | Set-Content -Path SHA256SUMS.txt -Encoding ascii
-
-      - name: Create release
+          dotnet restore XpsManager.slnx --force-evaluate -p:NuGetAudit=true
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet restore tools/TelemetryChecks --force-evaluate -p:NuGetAudit=true
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build and run checks
+        run: |
+          dotnet build XpsManager.slnx -c Release --no-restore -warnaserror
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet run --project tools/TelemetryChecks -c Release --no-restore
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build installer upgrade fixture
+        run: |
+          ./tools/Build-Installer.ps1 -Version 0.0.1
+          Copy-Item installer/bin/Release/XpsManager-0.0.1-win-x64.msi artifacts/upgrade-fixture.msi
+      - name: Build release installer
+        run: ./tools/Build-Installer.ps1 -Version $env:RELEASE_VERSION
+      - name: Inspect installer package
+        run: ./tools/Test-InstallerPackage.ps1 -Msi "installer/bin/Release/XpsManager-$env:RELEASE_VERSION-win-x64.msi" -Version $env:RELEASE_VERSION
+      - name: Check installation, repair, upgrade, downgrade and uninstall
+        run: ./tools/Test-Installer.ps1 -Msi "installer/bin/Release/XpsManager-$env:RELEASE_VERSION-win-x64.msi" -OlderMsi artifacts/upgrade-fixture.msi
+      - name: Package MSI and ZIP
         shell: pwsh
+        run: ./tools/Package-Release.ps1 -Version $env:RELEASE_VERSION
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-package
+          path: artifacts/release/
+          if-no-files-found: error
+      - name: Keep installer test logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: installer-test-logs
+          path: artifacts/installer-tests/*.log
+          if-no-files-found: ignore
+
+  publish-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-package
+          path: release
+      - name: Publish release with verified downloads
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          $notes = @"
-          XPS Manager $env:TAG for Windows 11 (x64).
-
-          - **XpsManager.exe**: download and run. Windows asks for administrator access, which is needed to change BIOS settings.
-          - **$env:ZIP**: the same app with the README and technical, security and validation documentation.
-          - **SHA256SUMS.txt**: SHA-256 checksums for both downloads.
-          - **Automatic thermal switching**: optional background service follows Windows power mode, even with the app closed. Enabling it installs a protected copy in Program Files. Disable Dell Optimizer's sync first; remove the service from Settings → Automatic.
-          - Battery serial number and firmware-reported PPID (when available) are now shown in Activity.
-          - Event-driven service with a two-second settling period, manual overrides, crash recovery and no periodic BIOS polling. Startup is configured automatically; no login task is needed.
-          - Protected executable and settings, administrator-only service management, and restricted native DLL loading.
-
-          **Validation:** automated policy, debounce, battery and telemetry checks run in this workflow. AC/battery switching and service lifecycle checks passed on the target laptop. Energy saver, rapid replug, sleep/wake, reboot startup and the newer-version update offer still have deferred hardware checks. See the validation document included in the zip.
-
-          Requires the [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0). Built for the Dell XPS 14 (DA14260).
-          The exe isn't code-signed, so Windows SmartScreen may warn the first time: choose **More info › Run anyway**.
-          "@
-          $notes | Set-Content -Path release-notes.md -Encoding utf8
-          gh release create $env:TAG dist/XpsManager.exe $env:ZIP SHA256SUMS.txt --verify-tag --title "XPS Manager $env:TAG" --notes-file release-notes.md
+          cd release
+          sha256sum --check SHA256SUMS.txt
+          gh release create "$RELEASE_TAG" ./*.msi ./*.zip SHA256SUMS.txt build-info.json \
+            --verify-tag --draft --title "XPS Manager $RELEASE_TAG" --notes-file RELEASE-NOTES.md
+          gh release edit "$RELEASE_TAG" --draft=false --latest
