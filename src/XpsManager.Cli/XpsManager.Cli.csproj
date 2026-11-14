@@ -2,7 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\XpsManager.Core\XpsManager.Core.csproj" />
-    <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.12" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="11.0.0" />
   </ItemGroup>
 
   <PropertyGroup>
