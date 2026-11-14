@@ -12,7 +12,8 @@ Copy-Item -LiteralPath (Join-Path $repo 'README.md') -Destination $package
 Copy-Item -LiteralPath (Join-Path $repo 'docs') -Destination $package -Recurse
 Copy-Item -LiteralPath (Join-Path $repo "docs/releases/v$Version.md") -Destination (Join-Path $release 'RELEASE-NOTES.md')
 $msiHash = (Get-FileHash -LiteralPath (Join-Path $package $msiName) -Algorithm SHA256).Hash.ToLowerInvariant()
-"$msiHash  $msiName" | Set-Content -LiteralPath (Join-Path $package 'SHA256SUMS.txt') -Encoding ascii
+# GNU sha256sum treats a CR from Windows CRLF as part of the filename.
+[IO.File]::WriteAllText((Join-Path $package 'SHA256SUMS.txt'), "$msiHash  $msiName`n", [Text.Encoding]::ASCII)
 @{
     version = $Version
     commit = $env:GITHUB_SHA
@@ -34,5 +35,5 @@ try {
 } finally { $archive.Dispose() }
 Copy-Item -LiteralPath (Join-Path $package $msiName),(Join-Path $package 'build-info.json') -Destination $release
 $zipHash = (Get-FileHash -LiteralPath (Join-Path $release $zipName) -Algorithm SHA256).Hash.ToLowerInvariant()
-@("$msiHash  $msiName", "$zipHash  $zipName") | Set-Content -LiteralPath (Join-Path $release 'SHA256SUMS.txt') -Encoding ascii
+[IO.File]::WriteAllText((Join-Path $release 'SHA256SUMS.txt'), "$msiHash  $msiName`n$zipHash  $zipName`n", [Text.Encoding]::ASCII)
 Write-Output "PASS: packaged $zipName and verified the embedded MSI checksum."
